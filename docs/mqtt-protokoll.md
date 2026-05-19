@@ -26,10 +26,10 @@ A szerver ide publikálja a vezérlési parancsokat és lekérdezéseket. Az esz
 
 | Példa | Topic | Payload |
 |-------|-------|---------|
-| Relé bekapcsolás | `cmnd/nappali_lampa/POWER` | `ON` / `OFF` / `TOGGLE` |
-| Aktuális állapot lekérés | `cmnd/nappali_lampa/POWER` | *(üres)* |
-| Hálózati státusz lekérés | `cmnd/nappali_lampa/Status` | `5` |
-| Telemetria időköz beállítás | `cmnd/nappali_lampa/TelePeriod` | `60` (másodperc) |
+| Relé bekapcsolás | `cmnd/A1B2C3/POWER` | `ON` / `OFF` / `TOGGLE` |
+| Aktuális állapot lekérés | `cmnd/A1B2C3/POWER` | *(üres)* |
+| Hálózati státusz lekérés | `cmnd/A1B2C3/Status` | `5` |
+| Telemetria időköz beállítás | `cmnd/A1B2C3/TelePeriod` | `60` (másodperc) |
 
 > **Megjegyzés:** Ha a parancs topicjára üres payloadot küldünk, az eszköz csak visszajelzi az aktuális állapotot, nem változtat rajta.
 
@@ -41,9 +41,9 @@ Az eszköz ide publikálja a parancsok eredményét és megerősítéseit.
 
 | Téma | Topic | Payload |
 |------|-------|---------|
-| Parancs megerősítés | `stat/nappali_lampa/POWER` | `ON` |
-| JSON eredmény (bármilyen parancsra) | `stat/nappali_lampa/RESULT` | `{"POWER":"ON"}` |
-| Státusz lekérés válasza | `stat/nappali_lampa/STATUS5` | `{"Status5":{"IPAddress":"192.168.1.50",...}}` |
+| Parancs megerősítés | `stat/A1B2C3/POWER` | `ON` |
+| JSON eredmény (bármilyen parancsra) | `stat/A1B2C3/RESULT` | `{"POWER":"ON"}` |
+| Státusz lekérés válasza | `stat/A1B2C3/STATUS5` | `{"Status5":{"IPAddress":"192.168.1.50",...}}` |
 
 ---
 
@@ -106,12 +106,12 @@ Az eszköz automatikusan, időközönként (alapértelmezetten **5 percenként**
 Felhasználó vezérli a lámpát a webes felületen:
 
 1. Szerver publikál:
-   Topic:   cmnd/nappali_lampa/POWER
+   Topic:   cmnd/A1B2C3/POWER
    Payload: ON
 
 2. Eszköz végrehajtja, majd publikál:
-   Topic:   stat/nappali_lampa/RESULT  │ Payload: {"POWER":"ON"}
-   Topic:   stat/nappali_lampa/POWER   │ Payload: ON
+   Topic:   stat/A1B2C3/RESULT  │ Payload: {"POWER":"ON"}
+   Topic:   stat/A1B2C3/POWER   │ Payload: ON
 
 3. Szerver fogadja a stat/ visszajelzést → frissíti az eszköz állapotát az adatbázisban
 ```
@@ -159,10 +159,10 @@ async def handle_message(message: aiomqtt.Message):
 A Tasmota konfig parancsokat egyenként `cmnd/` ágon kell elküldeni. Több paraméter esetén egymás után:
 
 ```
-cmnd/{topic}/TelePeriod    → 60
-cmnd/{topic}/PowerRetain   → 1
-cmnd/{topic}/MqttHost      → szerver.example.com
-cmnd/{topic}/MqttPort      → 1883
+cmnd/A1B2C3/TelePeriod    → 60
+cmnd/A1B2C3/PowerRetain   → 1
+cmnd/A1B2C3/MqttHost      → szerver.example.com
+cmnd/A1B2C3/MqttPort      → 1883
 ```
 
 > A szerver a konfig verzióváltozáskor automatikusan elküldi a szükséges `cmnd/` üzeneteket MQTT-n.
@@ -174,7 +174,7 @@ cmnd/{topic}/MqttPort      → 1883
 Az összes Tasmota eszköz feliratkozik a `cmnd/tasmotas/#` topicra is (alapértelmezett GroupTopic). Ha ide publikálunk, az összes eszköz egyszerre hajtja végre:
 
 ```
-cmnd/tasmotas/POWER  →  OFF   (összes eszköz kikapcsol)
+cmnd/tasmotas/POWER  →  OFF   (összes Tasmota eszköz kikapcsol)
 ```
 
 > A GroupTopic felülírható eszközönként – érdemes projekt-specifikus csoportneveket használni, pl. `cmnd/smartblue_all/#`.
@@ -187,8 +187,8 @@ Ha az architektúra megkívánja, a topic sorrend megfordítható a Tasmota konz
 
 | Formátum | Példa |
 |---------|-------|
-| Alapértelmezett: `%prefix%/%topic%/` | `cmnd/nappali_lampa/POWER` |
-| Megfordított: `%topic%/%prefix%/` | `nappali_lampa/cmnd/POWER` |
+| Alapértelmezett: `%prefix%/%topic%/` | `cmnd/A1B2C3/POWER` |
+| Megfordított: `%topic%/%prefix%/` | `A1B2C3/cmnd/POWER` |
 
 > **Projekt döntés szükséges:** Alapértelmezett Tasmota struktúrát tartjuk-e, vagy megfordítjuk?  
 > Javaslat: **alapértelmezett megtartása** – egyszerűbb wildcard feliratkozás, jobb Tasmota kompatibilitás.
@@ -202,7 +202,7 @@ A `tele/+/SENSOR` üzenet feldolgozásakor az adat InfluxDB-be kerül:
 ```
 measurement: sensor_data
 tags:
-  device_topic: "nappali_lampa"
+  device_topic: "A1B2C3"
   sensor_type:  "BME280"
 fields:
   temperature: 22.5
@@ -217,6 +217,8 @@ timestamp:     (az üzenetben lévő "Time" mező, vagy fogadás ideje)
 
 - [x] **FullTopic:** Alapértelmezett Tasmota sorrend marad: `cmnd/{topic}/...`
 - [x] **TelePeriod:** 300 másodperc (5 perc) – alapértelmezett, eszközönként felülírható
-- [x] **Eszköz `%topic%` neve:** MAC alapú (Tasmota alapértelmezett, pl. `tasmota_A1B2C3`) – változatlan MQTT azonosító
+- [x] **Eszköz `%topic%` neve:** MAC-alapú, **firmware-előtag nélkül** – csak a 6 hex karakteres MAC-suffix (pl. `A1B2C3`)
+  - Tasmota alapértelmezettje `tasmota_A1B2C3` – ezt felül kell írni provisioning során: `Topic A1B2C3`
+  - Firmware-agnosztikus: ha később nem Tasmota alapú eszköz kerül be, ugyanolyan formátumú azonosítót kap
 - [x] **Emberi név:** A szerver adatbázisban az eszközhöz rendelünk olvasható nevet (pl. „Hátsó udvar hőmérő"), a UI ezt jeleníti meg
 - [ ] **GroupTopic:** Szükséges-e egyedi csoportnév (pl. `smartblue_all`)? – később döntünk

@@ -207,14 +207,13 @@ async def handle_message(message: aiomqtt.Message):
 ```
 measurement: telemetry
 tags:
-  device_id: "esp32-001"
-  device_type: "sensor_v1"
-  location: "serbia-site-1"
+  device_topic: "A1B2C3"       # MAC-alapú, firmware-agnosztikus azonosító
+  device_type:  "sensor_v1"
+  location:     "serbia-site-1"
 fields:
   temperature: 23.5
-  humidity: 61.2
-  battery_pct: 87
-  rssi: -72
+  humidity:    61.2
+  rssi:        -72
 timestamp: 2026-05-19T16:00:00Z
 ```
 
