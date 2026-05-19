@@ -307,11 +307,11 @@ services:
 
 ---
 
-## Nyitott kérdések
+## Döntések és nyitott kérdések
 
-- [ ] Szükséges-e mobilalkalmazás, vagy web UI elegendő?
-- [ ] Ki üzemelteti a szervert? (saját csapat)
-- [ ] GDPR / adatvédelmi követelmények – EU-ban tároljunk vagy szerbiai szerveren?
-- [ ] Szükséges-e real-time dashboard (Grafana), vagy csak riasztás/report?
-- [ ] EMQX Rule Engine-t használjuk-e közvetlen InfluxDB íráshoz, vagy FastAPI kezelje?
-- [ ] Milyen autentikáció legyen az eszközök és az EMQX között? (username/password, mTLS, JWT)
+- [x] **Üzemeltetés:** Saját csapat – VPS + Docker Compose
+- [ ] **Mobilalkalmazás:** Még nem döntött – web UI, PWA vagy natív app?
+- [ ] **GDPR / adattárolás helye:** Még nem vizsgált – EU vs szerbiai szerver
+- [ ] **Real-time dashboard:** Később döntünk – Grafana, egyedi UI, vagy csak riasztás
+- [ ] **EMQX Rule Engine:** FastAPI vagy direkt EMQX → InfluxDB írás? – még nyitott
+- [ ] **EMQX eszköz autentikáció:** username/password, mTLS vagy JWT? – még nyitott

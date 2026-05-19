@@ -47,26 +47,37 @@ Ez a dokumentum összefoglalja a nyitott döntési pontokat és a javasolt köve
 ## Összesített stack – pilot fázis
 
 ```
-Eszköz:       ESP32 + GSM 4G modul (SIM7070G vagy A7680C)      [nyitott]
+Eszköz:       ESP32 WiFi (Tasmota firmware)                    [döntve]
+Kommunikáció: WiFi – beltéri helyszínek, garantált lefedettség [döntve]
+GSM (2. fáz): 1NCE IoT SIM kártyák                            [döntve]
 Protokoll:    MQTT – Tasmota konvenció (cmnd / stat / tele)    [döntve]
-MQTT Broker:  EMQX                                             [döntve]
+Topic névkon: MAC alapú %topic% + emberi név az adatbázisban   [döntve]
+TelePeriod:   300 mp (5 perc)                                  [döntve]
+MQTT Broker:  EMQX (alapért. FullTopic struktúra)              [döntve]
 Backend:      Python / FastAPI + aiomqtt                       [döntve]
 Relációs DB:  PostgreSQL (SQLAlchemy async + Alembic)          [döntve]
 Idősor DB:    InfluxDB                                         [döntve]
-Hosting:      Hetzner VPS + Docker Compose                     [nyitott]
-Értesítés:    Email (kötelező) + SMS via Infobip (javasolt)    [nyitott]
+Üzemeltetés: Saját csapat – VPS + Docker Compose              [döntve]
+Értesítés:    Email (kötelező) + SMS (javasolt)                [nyitott]
+Dashboard:    Még nem döntött                                  [nyitott]
+Mobilapp:     Még nem döntött                                  [nyitott]
+GDPR:         Még nem vizsgált                                 [nyitott]
+EMQX auth:    Még nem döntött                                  [nyitott]
 ```
 
 ---
 
 ## Következő lépések
 
-- [ ] **Helyszín felmérés** – pilot helyszínek WiFi/GSM lefedettségének ellenőrzése
-- [ ] **SIM kártya stratégia** – szerb operátor kiválasztása, IoT adatcsomag árak
-- [ ] **Eszközcsalád pontosítása** – milyen mérési feladatok, hány eszköztípus
+- [x] **Helyszín felmérés** – beltéri, WiFi garantált
+- [x] **SIM kártya stratégia** – 1NCE IoT SIM kártyák (következő fázishoz)
+- [ ] **Eszközcsalád pontosítása** – hőmérséklet/páratartalom, relé, mozgásérzékelő ismert; további típusok nyitottak
 - [x] **Csapat technológiai ismerete** – Python/FastAPI stack kiválasztva
 - [ ] **MVP scope meghatározása** – mi kell az első pilot induláshoz minimálisan
-- [ ] **GDPR / adatvédelem** – szerbiai vs EU adattárolás kérdése
+- [ ] **GDPR / adatvédelem** – szerbiai vs EU adattárolás jogi vizsgálata szükséges
+- [ ] **EMQX autentikáció** – eszköz azonosítási módszer kiválasztása
+- [ ] **Mobilalkalmazás döntés** – web UI, PWA vagy natív?
+- [ ] **Dashboard döntés** – Grafana, egyedi, vagy csak riasztás?
 
 ---
 

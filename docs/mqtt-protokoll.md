@@ -213,9 +213,10 @@ timestamp:     (az üzenetben lévő "Time" mező, vagy fogadás ideje)
 
 ---
 
-## Nyitott kérdések
+## Döntések
 
-- [ ] Alapértelmezett Tasmota FullTopic struktúra marad, vagy megfordítjuk?
-- [ ] `TelePeriod` alapértelmezett értéke mekkora legyen projektenként?
-- [ ] Egyedi `GroupTopic` szükséges-e (pl. `smartblue_all`)?
-- [ ] Az eszközök `%topic%` neve milyen konvenciót kövessen? (pl. `sb_{helyszín}_{sorszám}`)
+- [x] **FullTopic:** Alapértelmezett Tasmota sorrend marad: `cmnd/{topic}/...`
+- [x] **TelePeriod:** 300 másodperc (5 perc) – alapértelmezett, eszközönként felülírható
+- [x] **Eszköz `%topic%` neve:** MAC alapú (Tasmota alapértelmezett, pl. `tasmota_A1B2C3`) – változatlan MQTT azonosító
+- [x] **Emberi név:** A szerver adatbázisban az eszközhöz rendelünk olvasható nevet (pl. „Hátsó udvar hőmérő"), a UI ezt jeleníti meg
+- [ ] **GroupTopic:** Szükséges-e egyedi csoportnév (pl. `smartblue_all`)? – később döntünk

@@ -81,10 +81,10 @@ Ez növeli a hardver komplexitást, de maximális flexibilitást biztosít.
 
 ---
 
-## Nyitott kérdések / döntési pontok
+## Döntések – pilot fázis
 
-- [ ] Milyen helyszíneken kerülnek telepítésre az első pilot eszközök? (beltér/kültér)
-- [ ] Van-e helyi WiFi infrastruktúra a pilot helyszíneken?
-- [ ] Mekkora az akkumulátor-élettartam elvárás?
-- [ ] Melyik szerb mobiloperátorral lesz SIM szerződés?
-- [ ] NB-IoT / Cat-M lefedettség megvan Szerbiában a kívánt területeken?
+- [x] **Helyszín:** Beltéri telepítések
+- [x] **WiFi:** Garantált lefedettség minden pilot helyszínen
+- [x] **Táplálás:** Hálózati táplálás (230V / DC adapter) – akkumulátor nem releváns
+- [x] **Pilot kommunikáció:** Csak WiFi – GSM modul a következő fázisra marad
+- [x] **GSM SIM (következő fázis):** 1NCE IoT SIM kártyák (egyszeri díj, globális lefedettség)
