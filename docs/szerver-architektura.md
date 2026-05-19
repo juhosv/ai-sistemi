@@ -68,19 +68,30 @@
 ### EMQX Rule Engine lehetőség
 Az EMQX Rule Engine képes közvetlenül InfluxDB-be írni MQTT üzenetekből – ez kiválthatja az aiomqtt→InfluxDB írást bizonyos esetekben (egyszerűsítés).
 
-### MQTT topic struktúra (javaslat)
+### MQTT topic struktúra – Tasmota konvenció
+
+Az eszközök a **Tasmota firmware** MQTT struktúráját követik: `%prefix%/%topic%/<utasítás>`
+
 ```
-smartblue/{device_id}/telemetry      # mérési adatok (eszköz → szerver)
-smartblue/{device_id}/status         # heartbeat / online-offline
-smartblue/{device_id}/config/get     # konfig kérés (eszköz → szerver)
-smartblue/{device_id}/config/set     # konfig küldés (szerver → eszköz)
-smartblue/{device_id}/alert          # riasztás az eszközről
+cmnd/{device_topic}/POWER        # Vezérlés: Központ → Eszköz
+cmnd/{device_topic}/TelePeriod   # Konfig parancs: Központ → Eszköz
+
+stat/{device_topic}/RESULT       # JSON eredmény-visszajelzés: Eszköz → Központ
+stat/{device_topic}/POWER        # Állapot visszajelzés: Eszköz → Központ
+
+tele/{device_topic}/SENSOR       # Szenzoradatok (időközönként): Eszköz → Központ
+tele/{device_topic}/STATE        # Eszköz állapot (WiFi, uptime): Eszköz → Központ
+tele/{device_topic}/LWT          # Online / Offline jelzés: Broker küldi
 ```
 
+→ Részletes topic dokumentáció: [`mqtt-protokoll.md`](mqtt-protokoll.md)
+
 ### LWT (Last Will and Testament)
-- Minden eszköz kapcsolódáskor beállít egy LWT üzenetet
-- Ha a kapcsolat váratlanul megszakad, EMQX automatikusan publikálja:  
-  `smartblue/{device_id}/status` → `{"online": false, "reason": "unexpected_disconnect"}`
+- Minden eszköz kapcsolódáskor regisztrál egy LWT üzenetet az EMQX-ben
+- Ha a kapcsolat váratlanul megszakad, az EMQX automatikusan publikálja:  
+  `tele/{device_topic}/LWT` → `Offline`
+- Újracsatlakozáskor az eszköz maga küldi:  
+  `tele/{device_topic}/LWT` → `Online`
 
 ---
 
@@ -146,7 +157,11 @@ import aiomqtt
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     async with aiomqtt.Client("emqx-host") as client:
-        await client.subscribe("smartblue/#")
+        # Tasmota topic struktúra szerinti feliratkozások
+        await client.subscribe("tele/+/SENSOR")   # szenzoradatok
+        await client.subscribe("tele/+/STATE")    # eszköz állapot
+        await client.subscribe("tele/+/LWT")      # online/offline
+        await client.subscribe("stat/+/#")        # parancs visszajelzések
         app.state.mqtt = client
         asyncio.create_task(mqtt_listener(client))
         yield
@@ -154,6 +169,15 @@ async def lifespan(app: FastAPI):
 async def mqtt_listener(client):
     async for message in client.messages:
         await handle_message(message)
+
+async def handle_message(message: aiomqtt.Message):
+    parts = str(message.topic).split("/")
+    prefix, device_topic, command = parts[0], parts[1], parts[2]
+    match (prefix, command):
+        case ("tele", "SENSOR"): await handle_sensor(device_topic, message.payload)
+        case ("tele", "STATE"):  await handle_state(device_topic, message.payload)
+        case ("tele", "LWT"):    await handle_lwt(device_topic, message.payload)
+        case ("stat", _):        await handle_stat(device_topic, command, message.payload)
 ```
 
 ---
@@ -206,7 +230,7 @@ timestamp: 2026-05-19T16:00:00Z
 
 ## Konfiguráció kezelés és OTA
 
-### Folyamat
+### Folyamat – Tasmota MQTT konfig küldéssel
 
 ```
 1. Felhasználó szerkeszti a konfig-ot (Web UI / API)
@@ -215,19 +239,17 @@ timestamp: 2026-05-19T16:00:00Z
 2. FastAPI elmenti PostgreSQL-be (új verzió, státusz: "pending")
         │
         ▼
-3. FastAPI MQTT-n értesíti az eszközt:
-   smartblue/{id}/config/set → {"version": 42, "action": "fetch"}
+3. FastAPI egyenként elküldi a cmnd/ parancsokat MQTT-n:
+   cmnd/{device_topic}/TelePeriod  → "60"
+   cmnd/{device_topic}/PowerRetain → "1"
+   cmnd/{device_topic}/<param>     → <érték>
         │
         ▼
-4. Eszköz HTTP GET-tel letölti:
-   GET /api/v1/devices/{id}/config
+4. Eszköz visszajelzést küld stat/ ágon:
+   stat/{device_topic}/RESULT → {"TelePeriod":{"Every": 60}}
         │
         ▼
-5. Eszköz ACK-ol MQTT-n:
-   smartblue/{id}/config/get → {"version": 42, "status": "applied"}
-        │
-        ▼
-6. FastAPI frissíti a PostgreSQL-ben: státusz → "active"
+5. FastAPI fogadja a stat/ visszajelzést → konfig státusz → "active"
 ```
 
 ---

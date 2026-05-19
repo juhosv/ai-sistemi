@@ -48,7 +48,7 @@ Ez a dokumentum összefoglalja a nyitott döntési pontokat és a javasolt köve
 
 ```
 Eszköz:       ESP32 + GSM 4G modul (SIM7070G vagy A7680C)      [nyitott]
-Protokoll:    MQTT (adatküldés) + HTTPS (konfig letöltés)      [döntve]
+Protokoll:    MQTT – Tasmota konvenció (cmnd / stat / tele)    [döntve]
 MQTT Broker:  EMQX                                             [döntve]
 Backend:      Python / FastAPI + aiomqtt                       [döntve]
 Relációs DB:  PostgreSQL (SQLAlchemy async + Alembic)          [döntve]

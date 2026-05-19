@@ -17,6 +17,10 @@ Az első pilot projektek **Szerbiában** kerülnek telepítésre.
 ### Eszközcsalád struktúrája
 Az eszközcsalád tagjai eltérő mérési/vezérlési feladatot látnak el, de a kommunikációs rész közös — ez lehetővé teszi az egységes szerver-oldali kezelést és a közös firmware-alapot.
 
+### Firmware
+- **Tasmota** – nyílt forráskódú ESP32/ESP8266 firmware
+- MQTT kommunikáció Tasmota konvenció szerint: `cmnd/`, `stat/`, `tele/` prefix struktúra
+
 ### Kommunikációs módok
 
 | Módszer | Leírás |
@@ -24,7 +28,8 @@ Az eszközcsalád tagjai eltérő mérési/vezérlési feladatot látnak el, de 
 | **WiFi** | IEEE 802.11 b/g/n, helyi hálózaton vagy hotspot-on keresztül |
 | **GSM 4G** | Mobilhálózati kapcsolat (LTE Cat-M1 / NB-IoT / full 4G modul) |
 
-→ Részletes összehasonlítás: [`kommunikacio.md`](kommunikacio.md)
+→ Részletes összehasonlítás: [`kommunikacio.md`](kommunikacio.md)  
+→ MQTT topic struktúra: [`mqtt-protokoll.md`](mqtt-protokoll.md)
 
 ---
 
@@ -59,5 +64,6 @@ A szerver a következő fő feladatokat látja el:
 |------|----------|
 | `PROJECT.md` | Ez a fájl – projekt kontextus |
 | `kommunikacio.md` | WiFi vs GSM 4G összehasonlítás, döntési szempontok |
-| `szerver-architektura.md` | Szerver technológiai lehetőségek |
+| `szerver-architektura.md` | Szerver technológiai stack és architektúra |
+| `mqtt-protokoll.md` | MQTT topic struktúra (Tasmota konvenció) |
 | `dontes-elokeszito.md` | Összefoglaló döntési mátrix |
