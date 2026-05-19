@@ -15,6 +15,10 @@ build/
 .idea/
 *.code-workspace
 
+# Cursor – belső fájlok kivéve a plans mappa
+.cursor/*
+!.cursor/plans/
+
 # OS
 .DS_Store
 Thumbs.db
