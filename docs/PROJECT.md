@@ -76,6 +76,13 @@ A szerver a következő fő feladatokat látja el:
 - **Helyszín:** Szerbia
 - **Cél:** Az eszközcsalád és a szerver infrastruktúra első éles tesztelése
 
+### Teszt fázis (jelenlegi)
+
+- **Teszt eszköz:** Wemos D1 Mini (ESP8266) – egyszerűbb, olcsóbb, a végleges ESP32 előtt
+- **Teszt szerver:** Bálint beállított egy ingyenes MQTT bróker + email értesítő szervert
+- **Folyamat:** Sogi megkapja a Tasmota telepítési leírást + szerver MQTT beállításokat → D1 Mini csatlakozik → email értesítés megy
+- **Eszközök a teszt után:** Végleges ESP32-alapú hardver tervezése (Sogi feladata)
+
 ---
 
 ## Dokumentumtérkép
@@ -87,4 +94,5 @@ A szerver a következő fő feladatokat látja el:
 | `szerver-architektura.md` | Szerver technológiai stack és architektúra |
 | `mqtt-protokoll.md` | MQTT topic struktúra (Tasmota konvenció) |
 | `eszkoz-szenzorok.md` | ESP32 szenzor katalógus és eszközcsalád tervezés |
+| `hw-d1mini-tasmota.md` | D1 Mini Tasmota telepítés, MQTT és PIR konfiguráció |
 | `dontes-elokeszito.md` | Összefoglaló döntési mátrix |

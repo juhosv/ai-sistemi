@@ -79,6 +79,14 @@ EMQX auth:    Még nem döntött                                  [nyitott]
 - [ ] **Mobilalkalmazás döntés** – web UI, PWA vagy natív?
 - [ ] **Dashboard döntés** – Grafana, egyedi, vagy csak riasztás?
 
+## Teszt fázis – folyamatban
+
+- [x] Tasmota telepítési leírás elkészült → Sogi megkapta
+- [x] Teszt szerver kész (Bálint) – email értesítés D1 Mini üzenetre
+- [ ] Sogi megkapja a szerver MQTT connection beállításokat (Bálinttól)
+- [ ] D1 Mini csatlakozik a teszt szerverhez
+- [ ] Első end-to-end teszt: D1 Mini → MQTT → szerver → email
+
 ---
 
 ## Nyitott kérdések összesítve
