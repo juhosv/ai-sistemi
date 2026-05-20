@@ -8,6 +8,26 @@ Az első pilot projektek **Szerbiában** kerülnek telepítésre.
 
 ---
 
+## Csapat
+
+| Szereplő | Szerepkör |
+|---------|-----------|
+| **Viktor** | How-to, projekt koordináció, követelmények |
+| **Zsolti** | Hardware tervezés és gyártás (Szerbiában él, helyi pilot felelős) |
+| **Bálint** | Szerver oldal: adatbázis és UI fejlesztés |
+
+---
+
+## Projekt jelenlegi fázisa
+
+**Információgyűjtés és pilot előkészítés**
+
+- Az összes projektinformáció markdown fájlokban kerül rögzítésre ebben a mappában
+- Elsődleges cél: a tudásbázis felépítése és a döntések dokumentálása
+- A pilot projekt indulásához szükséges döntések és feladatok nyomon követése: [`dontes-elokeszito.md`](dontes-elokeszito.md)
+
+---
+
 ## Terepi eszközök
 
 ### Platform
