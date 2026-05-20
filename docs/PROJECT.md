@@ -66,4 +66,5 @@ A szerver a következő fő feladatokat látja el:
 | `kommunikacio.md` | WiFi vs GSM 4G összehasonlítás, döntési szempontok |
 | `szerver-architektura.md` | Szerver technológiai stack és architektúra |
 | `mqtt-protokoll.md` | MQTT topic struktúra (Tasmota konvenció) |
+| `eszkoz-szenzorok.md` | ESP32 szenzor katalógus és eszközcsalád tervezés |
 | `dontes-elokeszito.md` | Összefoglaló döntési mátrix |
