@@ -13,7 +13,7 @@ Az első pilot projektek **Szerbiában** kerülnek telepítésre.
 | Szereplő | Szerepkör |
 |---------|-----------|
 | **Viktor** | How-to, projekt koordináció, követelmények |
-| **Zsolti** | Hardware tervezés és gyártás (Szerbiában él, helyi pilot felelős) |
+| **Zsolti (Sogi)** | Hardware tervezés és gyártás (Szerbiában él, helyi pilot felelős) |
 | **Bálint** | Szerver oldal: adatbázis és UI fejlesztés |
 
 ---
