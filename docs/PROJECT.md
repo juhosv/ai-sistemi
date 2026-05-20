@@ -95,4 +95,5 @@ A szerver a következő fő feladatokat látja el:
 | `mqtt-protokoll.md` | MQTT topic struktúra (Tasmota konvenció) |
 | `eszkoz-szenzorok.md` | ESP32 szenzor katalógus és eszközcsalád tervezés |
 | `hw-d1mini-tasmota.md` | D1 Mini Tasmota telepítés, MQTT és PIR konfiguráció |
+| `termek-otletek.md` | Termék ötletek és koncepciók |
 | `dontes-elokeszito.md` | Összefoglaló döntési mátrix |
