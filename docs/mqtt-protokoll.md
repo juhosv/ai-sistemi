@@ -52,6 +52,12 @@ Az eszköz ide publikálja a parancsok eredményét és megerősítéseit.
 Az eszköz automatikusan, időközönként (alapértelmezetten **5 percenként**, `TelePeriod` paranccsal módosítható) vagy eseményvezérelten publikál ide.
 
 #### Szenzoradatok – `tele/{topic}/SENSOR`
+
+> **Fontos:** A SENSOR üzenet küldési viselkedése **szenzortípusonként eltér:**
+> - **Fizikai szenzor (DHT22, BME280 stb.):** periodikusan, `TelePeriod` szerint (alapból 5 percenként)
+> - **Switch bemenet (gomb, PIR, reed relé):** csak **állapotváltáskor** (edge-triggered), nem periodikusan
+
+Fizikai szenzor (periodikus):
 ```json
 {
   "Time": "2026-05-19T17:30:00",
@@ -62,6 +68,12 @@ Az eszköz automatikusan, időközönként (alapértelmezetten **5 percenként**
   },
   "TempUnit": "C"
 }
+```
+
+Switch bemenet (csak váltáskor – tesztből megerősítve 2026-05-27):
+```json
+{"Time": "2026-05-27T21:56:51", "Switch1": "ON"}
+{"Time": "2026-05-27T21:56:53", "Switch1": "OFF"}
 ```
 
 #### Eszköz állapota – `tele/{topic}/STATE`

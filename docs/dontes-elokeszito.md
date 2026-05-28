@@ -79,13 +79,23 @@ EMQX auth:    Még nem döntött                                  [nyitott]
 - [ ] **Mobilalkalmazás döntés** – web UI, PWA vagy natív?
 - [ ] **Dashboard döntés** – Grafana, egyedi, vagy csak riasztás?
 
-## Teszt fázis – folyamatban
+## Teszt fázis – státusz
 
 - [x] Tasmota telepítési leírás elkészült → Sogi megkapta
 - [x] Teszt szerver kész (Bálint) – email értesítés D1 Mini üzenetre
-- [ ] Sogi megkapja a szerver MQTT connection beállításokat (Bálinttól)
-- [ ] D1 Mini csatlakozik a teszt szerverhez
-- [ ] Első end-to-end teszt: D1 Mini → MQTT → szerver → email
+- [x] Sogi megkapta az MQTT beállításokat
+- [x] **End-to-end teszt sikeres** (2026-05-27): Sogi eszköze (`kzs_smart_proba_2026`) MQTT üzenetet küld a publikus brókernek
+- [ ] Email értesítés Soginak Switch eseménykor (`zsoltorigo@gmail.com`)
+- [ ] PIR szenzor éles teszt
+
+### Tanulság a tesztből – Switch SENSOR viselkedés
+
+A Tasmota Switch bemenet **csak állapotváltáskor** küld `tele/.../SENSOR` üzenetet, nem periodikusan:
+```json
+tele/kzs_smart_proba_2026/SENSOR → {"Time":"...","Switch1":"ON"}   ← váltáskor
+tele/kzs_smart_proba_2026/SENSOR → {"Time":"...","Switch1":"OFF"}  ← visszaváltáskor
+```
+Ez **edge-triggered** logika – a szervernek ezt figyelembe kell vennie a feldolgozásnál.
 
 ---
 

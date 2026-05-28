@@ -175,13 +175,15 @@ SwitchMode1 2
 
 ### Keletkező MQTT üzenetek
 
-Mozgás észlelve:
+> **Fontos megfigyelés a tesztből:** Switch bemenet esetén a Tasmota **csak állapotváltáskor** küld SENSOR üzenetet (`tele/.../SENSOR`), nem periodikusan! Ez edge-triggered viselkedés.
+
+Mozgás / kapcsolás észlelve:
 ```json
-stat/A1B2C3/RESULT  →  {"Switch1":"ON"}
+tele/A1B2C3/SENSOR  →  {"Time":"2026-05-27T21:56:51","Switch1":"ON"}
 ```
-Mozgás megszűnt:
+Mozgás megszűnt / kapcsolás vissza:
 ```json
-stat/A1B2C3/RESULT  →  {"Switch1":"OFF"}
+tele/A1B2C3/SENSOR  →  {"Time":"2026-05-27T21:56:53","Switch1":"OFF"}
 ```
 
 ---
@@ -200,10 +202,60 @@ Payload: OFF
 
 ---
 
+## Teszt eszközök – élő paraméterek
+
+### Viktor teszt eszköze
+
+| Paraméter | Érték |
+|-----------|-------|
+| MQTT Host | `broker.emqx.io` (publikus, ingyenes) |
+| Port | `1883` |
+| User / Password | üres |
+| Topic | `vj_smart_sonoff_2026` |
+| FullTopic | `%prefix%/%topic%/` |
+
+Feliratkozni érdemes:
+```
+tele/vj_smart_sonoff_2026/#   → STATE, SENSOR üzenetek
+stat/vj_smart_sonoff_2026/#   → RESULT (kapcsolás visszajelzés)
+```
+
+### Sogi teszt eszköze
+
+| Paraméter | Érték |
+|-----------|-------|
+| MQTT Host | `broker.emqx.io` |
+| Port | `1883` |
+| Topic | `kzs_smart_proba_2026` |
+
+Feliratkozni:
+```
+tele/kzs_smart_proba_2026/#
+stat/kzs_smart_proba_2026/#
+```
+
+Élő SENSOR üzenet példa Sogitól:
+```json
+topic:   tele/kzs_smart_proba_2026/SENSOR
+payload: {"Time":"2026-05-27T21:56:51","Switch1":"ON"}
+         {"Time":"2026-05-27T21:56:53","Switch1":"OFF"}
+```
+
+### MQTT Explorer beállítás (monitoring)
+
+- Host: `broker.emqx.io`, Port: `1883`, User/Pass: üres
+- Advanced → Subscribe: töröld a `#`-t, add hozzá:
+  - `tele/vj_smart_sonoff_2026/#`
+  - `stat/vj_smart_sonoff_2026/#`
+
+---
+
 ## Projekt státusz
 
 - [x] Tasmota telepítési leírás elkészült (Viktor → Sogi)
-- [x] Teszt szerver kész: Bálint beállította, email értesítés megy, ha az eszköz üzenetet küld
-- [ ] Sogi megkapja a szerver MQTT beállításokat (Bálinttól)
-- [ ] D1 Mini csatlakoztatva a teszt szerverhez
-- [ ] PIR szenzor teszt
+- [x] Teszt szerver kész: Bálint beállította, email értesítés megy ha az eszköz üzenetet küld
+- [x] Sogi megkapta az MQTT beállításokat
+- [x] **Sogi eszköze csatlakozik és üzenetet küld** – end-to-end teszt sikeres! (2026-05-27)
+- [x] Switch szenzor teszt: `tele/.../SENSOR` üzenetek érkeznek ON/OFF váltáskor
+- [ ] Email értesítés Soginak Switch eseménykor: `zsoltorigo@gmail.com`
+- [ ] PIR szenzor (mozgásérzékelő) éles teszt
