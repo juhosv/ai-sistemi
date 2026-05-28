@@ -151,27 +151,52 @@ PIR OUT  →  D1 / GPIO5
 > ```
 > Ez kb. 3,3 V-ra osztja az 5 V-os jelet.
 
-### Tasmota GPIO beállítás
+### Tasmota GPIO beállítás – MQTT-n keresztül (tesztből megerősítve)
 
-**Configuration → Configure Module:**
-```
-GPIO5 → Switch1
-```
-Mentés → újraindulás.
+A GPIO és SwitchMode beállítható **MQTT `cmnd/` parancsokon keresztül** is – nem kell webfelület vagy konzol.
 
-### Console beállítások
+**Sogi tesztjéből (2026-05-27) – működő konfiguráció GPIO2-re:**
 
 ```
+cmnd/kzs_smart_proba_2026/Gpio2      → 160
+cmnd/kzs_smart_proba_2026/SwitchMode1 → 15
+```
+
+| Parancs | Érték | Jelentés |
+|---------|-------|----------|
+| `Gpio2` | `160` | GPIO2 lábat Switch1 funkcióra állítja (Tasmota v9+ kódjegyzék: 160 = Switch1) |
+| `SwitchMode1` | `15` | Csak MQTT üzenetet küld, relét NEM kapcsol – érintésre / jelváltásra aktiválódik |
+
+**Fizikai teszt:** GPIO2 lábat GND-re érintve → MQTT üzenet érkezett. ✓
+
+> **Megjegyzés:** GPIO2 = D4 pin a D1 Minin (boot-érzékeny, beépített LED is rajta van).  
+> Végleges eszközöknél érdemes biztonságosabb lábat választani: D1/GPIO5, D2/GPIO4, D5/GPIO14.
+
+### Alternatív beállítás webfelületen / konzolon
+
+```
+# Webfelület: Configuration → Configure Module
+GPIO5 → Switch1    # biztonságosabb láb
+
+# Konzol
 SwitchMode1 1     # normál kapcsoló mód
 SetOption114 1    # leválasztja a Switch-et a relévezérléstől
-                  # (csak MQTT eseményt küld, nem kapcsol relét)
 Restart 1
 ```
 
-Ha fordítva működik (mozgás nélkül aktív):
+Ha fordítva működik (alapból aktív):
 ```
 SwitchMode1 2
 ```
+
+### SwitchMode referencia (legfontosabb értékek)
+
+| SwitchMode | Viselkedés |
+|-----------|------------|
+| 1 | Follow: HIGH=ON, LOW=OFF |
+| 2 | Follow inverted: LOW=ON, HIGH=OFF |
+| 3 | Pushbutton: lenyomásra vált |
+| 15 | Csak MQTT üzenet, relévezérlés nélkül (tesztből: működik) |
 
 ### Keletkező MQTT üzenetek
 
