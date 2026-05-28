@@ -133,9 +133,45 @@ Az ESP32 + Tasmota Rules **Home Assistant / MQTT broker nélkül** is tud önál
 
 ---
 
+## Opcionális: OLED kijelző hozzáadása
+
+Helyi státuszkijelző hozzáadható – szerver / Home Assistant nélkül is látható az állapot:
+
+```
+Temp: 36.4 C
+Fan:  45 %
+Mode: AUTO
+Sensor: OK
+```
+
+**Ajánlott:** 0.96″ SSD1306 I2C OLED (128×64)
+- Csak 2 extra GPIO (SDA + SCL, I2C-n a szenzorral megosztható!)
+- Tasmota build: `tasmota32-display.bin` szükséges
+- Hestore opció: `D096-12864-I2C` (~900–1000 Ft) vagy integrált ESP32+OLED board (~3 116 Ft)
+
+→ Részletek: [`hw-kijelzok.md`](hw-kijelzok.md)
+
+## Opcionális: Ethernet (WiFi helyett)
+
+Fix telepítésű eszközöknél (kazánház, gépészeti szekrény, szerverrack) érdemes lehet:
+
+**WT32-ETH01** (Hestore prod_10047946): ESP32 + RJ45 Ethernet, ~6 267 Ft nettó
+
+```
+DS18B20 → WT32-ETH01 → Ethernet kábel → helyi hálózat → SmartBlue szerver
+                ↓
+           PWM GPIO → MOSFET → ventilátor
+```
+
+> Ha a szabályozás önállóan fut (Tasmota Rules), az Ethernet csak monitoringhoz / konfighoz kell.
+
+---
+
 ## Nyitott kérdések
 
 - [ ] 2 vagy 4 vezetékes ventilátor?
 - [ ] Lépcsős Tasmota Rules elegendő, vagy PID (ESPHome)?
 - [ ] Milyen alkalmazásba kerül? (szerverrack, ipari szekrény, 3D nyomtató, egyéb?)
 - [ ] Szükséges-e SmartBlue szerver integráció (naplózás, riasztás)?
+- [ ] Kell-e helyi OLED kijelző?
+- [ ] WiFi elegendő, vagy Ethernet kell a stabilitáshoz?

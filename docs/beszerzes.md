@@ -41,3 +41,26 @@ Forrás: `hestore_20260528.xml`
 - Az **ESP32-C3** RISC-V architektúrájú (nem Xtensa) – Tasmota támogatás ellenőrizendő
 - Az **ESP32-S3** a legteljesebb ebben a csomagban (16MB flash, 8MB PSRAM, 240MHz dual-core)
 - A **BME280 3.3V-os modul** – ne adj rá 5V-ot
+
+---
+
+## Tervezett / vizsgált alkatrészek (nem megvett)
+
+### Kijelzők
+
+| Hestore termék | Leírás | Tasmota | Megjegyzés |
+|----------------|--------|---------|------------|
+| D096-12864-I2C | 0.96″ SSD1306 OLED 128×64, I2C | ✓ | ~900–1000 Ft, legjobb kezdő kijelző |
+| prod_10048022 | ESP32-WROOM-32 + 0.96″ OLED integrált board | ✓ (display build) | 3 116 Ft nettó, tesztelésre jó |
+
+### Ethernet ESP32
+
+| Hestore termék | Leírás | Mikor érdemes |
+|----------------|--------|---------------|
+| prod_10047946 | WT32-ETH01 – ESP32 + RJ45 Ethernet | Fix telepítésű eszközökhöz, ahol nincs megbízható WiFi (kazánház, gépészet, szerverrack) |
+
+> **WT32-ETH01 megjegyzések:**
+> - Nettó ~6 267 Ft (drágább mint sima ESP32)
+> - Az Ethernet chip több GPIO-t lefoglal
+> - Nincs beépített USB programozó → külső USB–TTL adapter kell flasheléshez
+> - Tasmotával/ESPHome-mal használható, de első körre nem ez az ajánlott fejlesztői board
