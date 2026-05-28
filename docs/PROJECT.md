@@ -99,4 +99,5 @@ A szerver a következő fő feladatokat látja el:
 | `beszerzes.md` | Megvásárolt alkatrészek listája |
 | `projekt-ventilator.md` | Hőmérsékletfüggő ventilátor-szabályozó projekt |
 | `hw-kijelzok.md` | Kijelző opciók – SSD1306, TFT, e-paper (Tasmota kompatibilitás) |
+| `hw-gyartok-tasmota.md` | Tasmota-kompatibilis gyártók (Athom, Nous, Shelly, Sonoff stb.) |
 | `dontes-elokeszito.md` | Összefoglaló döntési mátrix |
