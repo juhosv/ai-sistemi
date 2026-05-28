@@ -7,11 +7,15 @@
 
 ## 🌡️ Alap környezeti szenzorok (pilot fázis)
 
-| Szenzor | Mér | Megjegyzés |
-|---------|-----|------------|
-| DHT22 | Hőmérséklet, páratartalom | Egyszerű, 1-wire, népszerű |
-| BMP280 / BME280 | Hőmérséklet, légnyomás, (páratartalom) | I2C/SPI, pontosabb mint DHT22 |
-| DS18B20 | Hőmérséklet | 1-wire, vízálló változat is létezik |
+| Szenzor | Mér | Tasmota | Megjegyzés |
+|---------|-----|---------|------------|
+| **BME280** | Hőmérséklet, páratartalom, légnyomás | ✓ Natív | I2C, 3.3V modul, legjobb általános szobaszenzor |
+| **DS18B20** | Hőmérséklet | ✓ Natív (DS18x20) | 1-Wire, vízhatlan változat, több szenzor egy GPIO-n, kell 4.7kΩ felhúzó |
+| **BH1750 / GY-302** | Megvilágítás (lux) | ✓ Natív | I2C, 1–65535 lux, automatizáláshoz ideális |
+| DHT22 / AM2302 | Hőmérséklet, páratartalom | ✓ | Egyszerűbb, de BME280 ajánlottabb |
+| BMP280 | Hőmérséklet, légnyomás | ✓ | BME280 nélküli verzió (nincs páratartalom) |
+
+> **Ajánlott sorrend:** BME280 > DS18B20 > DHT22. A BME280 a legjobb ár/érték arányú általános szenzor.
 
 ---
 

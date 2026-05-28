@@ -96,4 +96,6 @@ A szerver a következő fő feladatokat látja el:
 | `eszkoz-szenzorok.md` | ESP32 szenzor katalógus és eszközcsalád tervezés |
 | `hw-d1mini-tasmota.md` | D1 Mini Tasmota telepítés, MQTT és PIR konfiguráció |
 | `termek-otletek.md` | Termék ötletek és koncepciók |
+| `beszerzes.md` | Megvásárolt alkatrészek listája |
+| `projekt-ventilator.md` | Hőmérsékletfüggő ventilátor-szabályozó projekt |
 | `dontes-elokeszito.md` | Összefoglaló döntési mátrix |
