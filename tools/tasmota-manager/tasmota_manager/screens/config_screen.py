@@ -826,22 +826,47 @@ class ConfigTab(TabPane):
         results_panel.add_class("hidden")
 
         try:
-            # Step 1 – start the scan
+            # Start the scan – results arrive AUTOMATICALLY as individual
+            # RSL: RESULT = {"WiFiScan":{"NET1":{...}}} lines after scan completes.
+            # There is NO need to send a second query; just wait for the device.
             serial_bridge.clear_buffer()
             serial_bridge.send("WifiScan 1")
-            status_lbl.update("[yellow]Szkennelés indítva… (4 s)[/yellow]")
 
-            # Wait for the ESP to scan all channels (~2-4 s depending on chip)
-            await asyncio.sleep(4.0)
+            # Poll the buffer every 0.5 s; give up after SCAN_TIMEOUT seconds.
+            # Once the first NET result arrives, wait one extra second for the
+            # remaining networks before declaring the scan complete.
+            SCAN_TIMEOUT = 10.0
+            SETTLE_AFTER_FIRST = 1.5   # wait this long after first result
+            CHECK_INTERVAL    = 0.5
 
-            # Step 2 – request cached results
-            serial_bridge.send("WifiScan")
-            status_lbl.update("[yellow]Eredmények lekérése…[/yellow]")
-            await asyncio.sleep(1.5)
+            elapsed = 0.0
+            first_result_at: Optional[float] = None
 
-            lines = list(serial_bridge.line_buffer)
+            while elapsed < SCAN_TIMEOUT:
+                await asyncio.sleep(CHECK_INTERVAL)
+                elapsed += CHECK_INTERVAL
+
+                lines   = list(serial_bridge.line_buffer)
+                networks = parse_wifi_scan(lines)
+
+                if networks:
+                    if first_result_at is None:
+                        first_result_at = elapsed
+                    status_lbl.update(
+                        f"[yellow]{len(networks)} hálózat eddig – várakozás…[/yellow]"
+                    )
+                    # Stop 1.5 s after the first result to collect stragglers
+                    if elapsed - first_result_at >= SETTLE_AFTER_FIRST:
+                        break
+                else:
+                    remaining = int(SCAN_TIMEOUT - elapsed)
+                    status_lbl.update(
+                        f"[yellow]Szkennelés… ({remaining} mp hátra)[/yellow]"
+                    )
+
+            # Final parse of everything collected
+            lines    = list(serial_bridge.line_buffer)
             networks = parse_wifi_scan(lines)
-
             scan_sel: Select = self.query_one("#wifi-scan-select")
 
             if not networks:
