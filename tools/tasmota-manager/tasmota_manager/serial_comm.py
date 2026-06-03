@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import collections
 import threading
 import time
 from typing import Callable, Optional
@@ -111,12 +112,23 @@ class AsyncSerialBridge:
     """
     Wraps SerialComm and delivers lines to an asyncio queue,
     making it easy to consume in Textual workers.
+
+    Also maintains a rolling line buffer so other modules can inspect
+    recent output (e.g. to parse Status responses after a query).
     """
+
+    BUFFER_SIZE = 500
 
     def __init__(self) -> None:
         self.comm = SerialComm()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self.queue: asyncio.Queue[str] = asyncio.Queue()
+        # Rolling buffer of recent lines (thread-safe deque)
+        self.line_buffer: collections.deque[str] = collections.deque(
+            maxlen=self.BUFFER_SIZE
+        )
+        # Detected chip family, updated by chip detection logic
+        self.detected_chip: Optional[str] = None
 
     def connect(self, port: str, baud: int = 115200) -> None:
         self._loop = asyncio.get_event_loop()
@@ -125,11 +137,16 @@ class AsyncSerialBridge:
 
     def disconnect(self) -> None:
         self.comm.disconnect()
+        self.detected_chip = None
 
     def send(self, command: str) -> None:
         self.comm.send(command)
 
+    def clear_buffer(self) -> None:
+        self.line_buffer.clear()
+
     def _enqueue(self, line: str) -> None:
+        self.line_buffer.append(line)
         if self._loop and self._loop.is_running():
             self._loop.call_soon_threadsafe(self.queue.put_nowait, line)
 

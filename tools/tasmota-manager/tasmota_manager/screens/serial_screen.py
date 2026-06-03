@@ -234,6 +234,8 @@ class SerialTab(TabPane):
 
             # Parse WiFi info from live output and Status 5 response
             self._parse_wifi_from_line(line)
+            # Detect chip from boot log or Status 2 response
+            self._detect_chip_from_line(line)
 
     # ------------------------------------------------------------------
     # WiFi status parsing
@@ -348,6 +350,64 @@ class SerialTab(TabPane):
                 f"Jelerősség: [{color}]{bars}[/{color}] {rssi} dBm ({quality})"
             )
         lbl.update("   ".join(parts) if parts else "–")
+
+    # ------------------------------------------------------------------
+    # Chip detection from serial output
+    # ------------------------------------------------------------------
+
+    def _detect_chip_from_line(self, line: str) -> None:
+        """
+        Identify chip family from Tasmota boot/status output.
+
+        Sources:
+        - Status 2 response: {"StatusFWR": {"Hardware": "ESP8266EX"}}
+        - Boot log: "ESP-IDF" marker → ESP32 family
+        - Boot log: "ets Jan  8 2013" → ESP8266
+        - Boot log: "ESP32" in APP line
+        """
+        serial_bridge = self.app.serial_bridge  # type: ignore[attr-defined]
+        chip: Optional[str] = None
+
+        # Status 2 JSON
+        if "StatusFWR" in line:
+            start = line.find("{")
+            if start >= 0:
+                try:
+                    data = json.loads(line[start:])
+                    hw = data.get("StatusFWR", {}).get("Hardware", "")
+                    if "ESP32-S3" in hw:
+                        chip = "ESP32-S3"
+                    elif "ESP32-C3" in hw:
+                        chip = "ESP32-C3"
+                    elif "ESP32" in hw:
+                        chip = "ESP32"
+                    elif "8266" in hw or "ESP8266" in hw:
+                        chip = "ESP8266"
+                except Exception:
+                    pass
+
+        # Boot markers
+        if chip is None:
+            if "ESP-IDF" in line:
+                chip = "ESP32"
+            elif "ets Jan  8 2013" in line or "ets_main.c" in line:
+                chip = "ESP8266"
+
+        # APP line sometimes contains chip info
+        if chip is None and line.startswith("APP:"):
+            if "ESP32S3" in line or "ESP32-S3" in line:
+                chip = "ESP32-S3"
+            elif "ESP32" in line:
+                chip = "ESP32"
+
+        if chip and chip != serial_bridge.detected_chip:
+            serial_bridge.detected_chip = chip
+            lbl: Label = self.query_one("#serial-status-label")
+            current = lbl.renderable if hasattr(lbl, "renderable") else ""
+            # Append chip badge if not already shown
+            self._log_line(
+                f"[dim]── Chip azonosítva: [bold cyan]{chip}[/bold cyan] ──[/dim]"
+            )
 
     # ------------------------------------------------------------------
     # Helpers

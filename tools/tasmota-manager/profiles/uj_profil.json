@@ -1,0 +1,21 @@
+{
+  "device_name": "",
+  "topic": "",
+  "wifi": {
+    "ssid1": "",
+    "password1": "",
+    "ssid2": "",
+    "password2": ""
+  },
+  "mqtt": {
+    "host": "broker.emqx.io",
+    "port": 1883,
+    "user": "",
+    "password": "",
+    "topic": "",
+    "full_topic": "%prefix%/%topic%/"
+  },
+  "tele_period": 300,
+  "module_type": 18,
+  "gpio": {}
+}

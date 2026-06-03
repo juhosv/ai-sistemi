@@ -1,6 +1,9 @@
 """Configuration tab – WiFi, MQTT, GPIO setup with profile management."""
 from __future__ import annotations
 
+import asyncio
+import json
+import re
 from pathlib import Path
 from typing import Optional
 
@@ -16,6 +19,112 @@ from textual.widgets import (
     Static,
     TabPane,
 )
+
+# -----------------------------------------------------------------------
+# Tasmota Status response parsers
+# -----------------------------------------------------------------------
+
+def _extract_json_block(text: str) -> Optional[dict]:
+    """Find and parse the first JSON object in *text*."""
+    start = text.find("{")
+    if start < 0:
+        return None
+    depth = 0
+    for i, ch in enumerate(text[start:], start):
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                try:
+                    return json.loads(text[start : i + 1])
+                except Exception:
+                    return None
+    return None
+
+
+def parse_status1(lines: list[str]) -> dict:
+    """Parse Status 1 (StatusPRM / Status) – topic, module, full_topic."""
+    result: dict = {}
+    for line in lines:
+        if "StatusPRM" not in line and '"Status"' not in line:
+            continue
+        data = _extract_json_block(line)
+        if not data:
+            continue
+        block = data.get("StatusPRM") or data.get("Status") or {}
+        if "Topic" in block:
+            result["topic"] = block["Topic"]
+        if "FullTopic" in block:
+            result["full_topic"] = block["FullTopic"]
+        if "Module" in block:
+            result["module_type"] = block["Module"]
+        if "DeviceName" in block:
+            result["device_name"] = block["DeviceName"]
+    return result
+
+
+def parse_status5(lines: list[str]) -> dict:
+    """Parse Status 5 (StatusNET) – WiFi SSID, IP (no password)."""
+    result: dict = {}
+    for line in lines:
+        if "StatusNET" not in line:
+            continue
+        data = _extract_json_block(line)
+        if not data:
+            continue
+        net = data.get("StatusNET", {})
+        if "SSId" in net:
+            result["ssid1"] = net["SSId"]
+        if "IPAddress" in net:
+            result["ip"] = net["IPAddress"]
+        if "RSSI" in net:
+            result["rssi"] = net["RSSI"]
+    return result
+
+
+def parse_status6(lines: list[str]) -> dict:
+    """Parse Status 6 (StatusMQT) – host, port, user, topic (no password)."""
+    result: dict = {}
+    for line in lines:
+        if "StatusMQT" not in line:
+            continue
+        data = _extract_json_block(line)
+        if not data:
+            continue
+        mqt = data.get("StatusMQT", {})
+        if "MqttHost" in mqt:
+            result["mqtt_host"] = mqt["MqttHost"]
+        if "MqttPort" in mqt:
+            result["mqtt_port"] = str(mqt["MqttPort"])
+        if "MqttUser" in mqt:
+            result["mqtt_user"] = mqt["MqttUser"]
+        # MqttPassword is never returned by Tasmota
+    return result
+
+
+def parse_status2(lines: list[str]) -> Optional[str]:
+    """Parse Status 2 (StatusFWR) – return chip family string or None."""
+    for line in lines:
+        if "StatusFWR" not in line:
+            continue
+        data = _extract_json_block(line)
+        if not data:
+            continue
+        hw = data.get("StatusFWR", {}).get("Hardware", "")
+        if "ESP32-S3" in hw:
+            return "ESP32-S3"
+        if "ESP32-C3" in hw:
+            return "ESP32-C3"
+        if "ESP32" in hw:
+            return "ESP32"
+        if "ESP8266" in hw or "8266" in hw:
+            return "ESP8266"
+    # Fallback: scan boot lines for ESP-IDF marker (ESP32 only)
+    for line in lines:
+        if "ESP-IDF" in line:
+            return "ESP32"
+    return None
 
 from tasmota_manager.config_builder import (
     GPIO_FUNCTION_TYPES,
@@ -103,6 +212,12 @@ class ConfigTab(TabPane):
                 yield Button("📂 Betöltés", id="cfg-load-btn", variant="default")
                 yield Button("💾 Mentés", id="cfg-save-btn", variant="primary")
                 yield Input(placeholder="Profil neve", id="cfg-profile-name-input", value="uj_profil")
+                yield Button(
+                    "📥 Letöltés eszközről",
+                    id="cfg-fetch-btn",
+                    variant="warning",
+                )
+                yield Label("", id="cfg-fetch-status")
 
             # --- Top panels: WiFi + MQTT --------------------------------
             with Horizontal(id="config-top-panels"):
@@ -209,6 +324,8 @@ class ConfigTab(TabPane):
             self._load_profile()
         elif bid == "cfg-save-btn":
             self._save_profile()
+        elif bid == "cfg-fetch-btn":
+            self.run_worker(self._fetch_config_from_device(), name="cfg_fetch")
         elif bid == "gpio-add-btn":
             self._add_gpio_row()
         elif bid.startswith("gpio-del-"):
@@ -428,6 +545,110 @@ class ConfigTab(TabPane):
     # ------------------------------------------------------------------
     # Sending config
     # ------------------------------------------------------------------
+
+    # ------------------------------------------------------------------
+    # Config fetch from device
+    # ------------------------------------------------------------------
+
+    async def _fetch_config_from_device(self) -> None:
+        serial_bridge = self.app.serial_bridge  # type: ignore[attr-defined]
+        status_lbl: Label = self.query_one("#cfg-fetch-status")
+
+        if not serial_bridge.is_connected:
+            self.notify("Nincs soros port kapcsolat! (Serial tab → Csatlakozás)", severity="warning")
+            return
+
+        status_lbl.update("[yellow]Lekérés…[/yellow]")
+        fetch_btn: Button = self.query_one("#cfg-fetch-btn")
+        fetch_btn.disabled = True
+
+        try:
+            # Clear buffer so we only parse fresh responses
+            serial_bridge.clear_buffer()
+
+            # Send all status queries
+            serial_bridge.send("Status 1")   # topic, module, full_topic
+            await asyncio.sleep(0.4)
+            serial_bridge.send("Status 5")   # WiFi SSID, IP (no password)
+            await asyncio.sleep(0.4)
+            serial_bridge.send("Status 6")   # MQTT host, port, user (no password)
+            await asyncio.sleep(0.4)
+            serial_bridge.send("Status 2")   # Firmware / chip hardware
+            await asyncio.sleep(1.0)         # Wait for all responses to arrive
+
+            lines = list(serial_bridge.line_buffer)
+            filled: list[str] = []
+            skipped: list[str] = []
+
+            # --- Parse Status 1 (device info) --------------------------
+            s1 = parse_status1(lines)
+            if s1.get("topic"):
+                self._set_input("#cfg-topic", s1["topic"])
+                self._set_input("#cfg-mqtt-topic", s1["topic"])
+                filled.append("Topic")
+            if s1.get("full_topic"):
+                self._set_input("#cfg-mqtt-fulltopic", s1["full_topic"])
+                filled.append("FullTopic")
+            if s1.get("module_type"):
+                try:
+                    sel: Select = self.query_one("#cfg-module")
+                    sel.value = int(s1["module_type"])
+                except Exception:
+                    pass
+                filled.append("Modul")
+
+            # --- Parse Status 5 (network) ------------------------------
+            s5 = parse_status5(lines)
+            if s5.get("ssid1"):
+                self._set_input("#cfg-ssid1", s5["ssid1"])
+                filled.append("WiFi SSID")
+            skipped.append("WiFi jelszó")   # never returned
+
+            # --- Parse Status 6 (MQTT) ---------------------------------
+            s6 = parse_status6(lines)
+            if s6.get("mqtt_host"):
+                self._set_input("#cfg-mqtt-host", s6["mqtt_host"])
+                filled.append("MQTT Host")
+            if s6.get("mqtt_port"):
+                self._set_input("#cfg-mqtt-port", s6["mqtt_port"])
+                filled.append("MQTT Port")
+            if s6.get("mqtt_user"):
+                self._set_input("#cfg-mqtt-user", s6["mqtt_user"])
+                filled.append("MQTT User")
+            skipped.append("MQTT jelszó")   # never returned
+
+            # --- Parse Status 2 (chip/hardware detection) --------------
+            chip = parse_status2(lines)
+            if chip:
+                serial_bridge.detected_chip = chip
+                status_lbl.update(f"[green]● Chip: {chip}[/green]")
+                filled.append(f"Chip: {chip}")
+            else:
+                status_lbl.update("[dim]Chip nem azonosítható[/dim]")
+
+            # --- Summary notification ----------------------------------
+            filled_str = ", ".join(filled) if filled else "–"
+            skipped_str = ", ".join(skipped)
+            self.notify(
+                f"Feltöltve: {filled_str}\n"
+                f"Nem elérhető (Tasmota biztonsági korlát): {skipped_str}",
+                severity="information",
+                timeout=8,
+            )
+            self._update_preview()
+
+        except Exception as exc:
+            status_lbl.update(f"[red]Hiba: {exc}[/red]")
+            self.notify(f"Lekérési hiba: {exc}", severity="error")
+        finally:
+            fetch_btn.disabled = False
+
+    def _set_input(self, widget_id: str, value: str) -> None:
+        try:
+            inp: Input = self.query_one(widget_id)
+            inp.value = value
+        except Exception:
+            pass
 
     def _send_via_serial(self) -> None:
         serial_bridge = self.app.serial_bridge  # type: ignore[attr-defined]

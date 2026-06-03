@@ -87,6 +87,23 @@ class FlashTab(TabPane):
     def on_mount(self) -> None:
         self._refresh_ports()
         self.run_worker(self._fetch_release_info(), exclusive=True, name="fetch_release")
+        self.run_worker(self._chip_watcher(), exclusive=False, name="chip_watcher")
+
+    async def _chip_watcher(self) -> None:
+        """Periodically update the chip label from detected_chip."""
+        import asyncio
+        serial_bridge = self.app.serial_bridge  # type: ignore[attr-defined]
+        last_chip: Optional[str] = None
+        while True:
+            chip = serial_bridge.detected_chip
+            if chip != last_chip:
+                last_chip = chip
+                lbl: Label = self.query_one("#flash-chip-label")
+                if chip:
+                    lbl.update(f"  [bold cyan]{chip}[/bold cyan] azonosítva")
+                else:
+                    lbl.update("")
+            await asyncio.sleep(1.0)
 
     # ------------------------------------------------------------------
     # Port helpers

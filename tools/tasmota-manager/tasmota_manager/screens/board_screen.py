@@ -213,6 +213,27 @@ class BoardTab(TabPane):
         self._rebuild_pin_table()
         self.run_worker(self._mqtt_state_listener(), exclusive=True, name="board_mqtt")
         self.run_worker(self._auto_poll_serial(), exclusive=True, name="board_serial_poll")
+        self.run_worker(self._chip_watcher(), exclusive=False, name="board_chip_watcher")
+
+    async def _chip_watcher(self) -> None:
+        """Auto-select board type when chip is detected via serial."""
+        import asyncio
+        from tasmota_manager.board_layouts import CHIP_DEFAULT_BOARD
+        serial_bridge = self.app.serial_bridge  # type: ignore[attr-defined]
+        last_chip: Optional[str] = None
+        while True:
+            chip = serial_bridge.detected_chip
+            if chip and chip != last_chip:
+                last_chip = chip
+                board_name = CHIP_DEFAULT_BOARD.get(chip)
+                if board_name and board_name in BOARD_BY_NAME:
+                    sel: Select = self.query_one("#board-type-select")
+                    sel.value = board_name
+                    self._current_board = BOARD_BY_NAME[board_name]
+                    diagram: BoardDiagram = self.query_one("#board-diagram", BoardDiagram)
+                    diagram.set_layout(self._current_board)
+                    self._rebuild_pin_table()
+            await asyncio.sleep(1.0)
 
     # ------------------------------------------------------------------
     # Select handler (board type change)
