@@ -43,13 +43,12 @@ _PREFIX_COLORS: dict[str, str] = {
 
 _PREFIX_RE = re.compile(r"^([A-Z]{2,4}):")
 
-# WiFi status parser: "WIF: Connected to AP..." or Status 5 JSON
-_STATUS5_RE = re.compile(
-    r'"StatusNET"\s*:\s*(\{[^}]+\})', re.DOTALL
-)
-_WIFI_RSSI_RE = re.compile(r'"RSSI"\s*:\s*(-?\d+)')
-_WIFI_SSID_RE = re.compile(r'"SSId"\s*:\s*"([^"]+)"')
-_WIFI_IP_RE   = re.compile(r'"IPAddress"\s*:\s*"([^"]+)"')
+# Matches "WIF: ..." with or without a Tasmota timestamp prefix
+# e.g. "WIF: Connected..." or "12:34:56.789 WIF: Connected..."
+_WIF_RE = re.compile(r'WIF:\s*(.*)')
+
+# Matches "AP1 SSID" or "AP 1 SSID" (Tasmota uses both)
+_AP_SSID_RE = re.compile(r'AP\s*\d+\s+(\S+)')
 
 
 def _colorize_line(line: str) -> str:
@@ -72,9 +71,10 @@ class SerialTab(TabPane):
     DEFAULT_CSS = ""
     connected: reactive[bool] = reactive(False)
 
-    # Accumulated partial buffer for multi-line Status 5 parsing
+    # Partial buffer for multi-line Status 5 response (rare, but safe)
     _status5_buf: str = ""
     _collecting_status5: bool = False
+    _status5_reset_on_next: bool = False  # guards against stuck flag
 
     def compose(self) -> ComposeResult:
         with Vertical(id="serial-tab"):
@@ -245,62 +245,77 @@ class SerialTab(TabPane):
         """
         Extract WiFi info from Tasmota serial output.
         Sources:
-        - WIF: lines (live connection events)
+        - WIF: lines (live connection events, with or without timestamp prefix)
         - Status 5 JSON response (StatusNET block)
-        - tele STATE-like lines with Wifi key
+        - tele STATE / Status 11 lines with "Wifi" key
         """
         # --- Live WIF: log lines ---
-        # "WIF: Connected to AP 1 HomeNetwork bssid AA:BB... in 1234 ms, IP 192.168.1.42"
-        if line.startswith("WIF:"):
-            rest = line[4:].strip()
+        # Tasmota may prefix lines with a timestamp: "12:34:56 WIF: Connected..."
+        # so we search for "WIF:" anywhere in the line, not just at the start.
+        wif_m = _WIF_RE.search(line)
+        if wif_m:
+            rest = wif_m.group(1).strip()
             if "Connected" in rest:
-                ip_m = re.search(r"IP (\d+\.\d+\.\d+\.\d+)", rest)
-                ssid_m = re.search(r"AP \d+ (\S+)", rest)
-                ip = ip_m.group(1) if ip_m else None
+                ip_m   = re.search(r"IP (\d+\.\d+\.\d+\.\d+)", rest)
+                ssid_m = _AP_SSID_RE.search(rest)   # matches "AP1 SSID" or "AP 1 SSID"
+                ip   = ip_m.group(1)   if ip_m   else None
                 ssid = ssid_m.group(1) if ssid_m else None
-                # No RSSI from this line – trigger a Status 5 to get it
                 self._set_wifi_status(ssid, ip, None, "Csatlakozva")
-                # Auto-fetch full WiFi details
+                # Auto-fetch full details (RSSI + confirmed SSID)
                 self._send_direct("Status 5")
             elif "Disconnect" in rest or "Fail" in rest:
                 self._set_wifi_status(None, None, None, "Nincs kapcsolat")
             return
 
-        # --- Status 5 JSON response ---
-        # Accumulate lines until we see "StatusNET" block
-        if "StatusNET" in line or self._collecting_status5:
+        # --- StatusNET JSON (Status 5 response) ---
+        # Each new "StatusNET" line RESETS the buffer to prevent stale data
+        # from a previous partial/failed parse from corrupting the next one.
+        if "StatusNET" in line:
             self._collecting_status5 = True
-            self._status5_buf += line + "\n"
+            self._status5_buf = line + "\n"   # always reset on new response
             if "}" in line:
                 self._try_parse_status5(self._status5_buf)
                 self._collecting_status5 = False
                 self._status5_buf = ""
             return
 
-        # --- Inline JSON with Wifi key (tele STATE) ---
+        if self._collecting_status5:
+            self._status5_buf += line + "\n"
+            if "}" in line:
+                self._try_parse_status5(self._status5_buf)
+                self._collecting_status5 = False
+                self._status5_buf = ""
+            # Safety: give up after 20 lines to avoid stuck state
+            elif self._status5_buf.count("\n") > 20:
+                self._collecting_status5 = False
+                self._status5_buf = ""
+            return
+
+        # --- Inline JSON with Wifi key (tele STATE / Status 11) ---
         if '"Wifi"' in line:
             try:
-                # Extract JSON portion
                 start = line.find("{")
                 if start >= 0:
                     data = json.loads(line[start:])
                     wifi = data.get("Wifi", {})
                     if wifi:
-                        rssi = wifi.get("Signal") or wifi.get("RSSI")
-                        ssid = wifi.get("SSId", "")
-                        ip = wifi.get("IPAddress", "")
-                        self._set_wifi_status(ssid, ip, rssi, "Csatlakozva")
+                        # "Signal" is dBm (negative), "RSSI" is percentage (0-100)
+                        rssi = self._normalise_rssi(
+                            wifi.get("Signal"), wifi.get("RSSI")
+                        )
+                        ssid = wifi.get("SSId") or wifi.get("SSId1", "")
+                        ip   = wifi.get("IPAddress", "")
+                        if ssid:
+                            self._set_wifi_status(ssid, ip or None, rssi, "Csatlakozva")
             except Exception:
                 pass
 
     def _try_parse_status5(self, buf: str) -> None:
         """Parse accumulated Status 5 / StatusNET JSON block."""
         try:
-            # Find the JSON object
             start = buf.find("{")
             if start < 0:
                 return
-            # Find matching closing brace
             depth = 0
             end = -1
             for i, ch in enumerate(buf[start:], start):
@@ -315,13 +330,39 @@ class SerialTab(TabPane):
                 return
 
             data = json.loads(buf[start:end])
-            net = data.get("StatusNET", data)
-            rssi = net.get("RSSI") or net.get("Signal")
+            net  = data.get("StatusNET", data)
+            # "Signal" = dBm, "RSSI" = percentage – normalise to dBm
+            rssi = self._normalise_rssi(net.get("Signal"), net.get("RSSI"))
             ssid = net.get("SSId", "")
             ip   = net.get("IPAddress", "")
-            self._set_wifi_status(ssid, ip, rssi, "Csatlakozva" if ip else None)
+            if ssid or ip:
+                self._set_wifi_status(
+                    ssid or None, ip or None, rssi,
+                    "Csatlakozva" if (ssid or ip) else None,
+                )
         except Exception:
             pass
+
+    @staticmethod
+    def _normalise_rssi(
+        signal: Optional[int], rssi_pct: Optional[int]
+    ) -> Optional[int]:
+        """
+        Return RSSI in dBm.
+
+        Tasmota uses two RSSI fields depending on context:
+        - "Signal"  : dBm  (negative, e.g. -65)  – preferred
+        - "RSSI"    : quality percentage (0-100)  – fallback
+          Approximate conversion: dBm ≈ RSSI% / 2 - 100
+        """
+        if signal is not None:
+            return int(signal)
+        if rssi_pct is not None:
+            pct = int(rssi_pct)
+            if pct < 0:        # already dBm (some older Tasmota builds)
+                return pct
+            return pct // 2 - 100   # percentage → dBm
+        return None
 
     def _set_wifi_status(
         self,
