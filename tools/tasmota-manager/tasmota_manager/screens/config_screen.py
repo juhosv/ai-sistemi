@@ -148,6 +148,39 @@ def parse_status2(lines: list[str]) -> Optional[str]:
             return "ESP32"
     return None
 
+def parse_wifi_scan(lines: list[str]) -> list[dict]:
+    """
+    Parse Tasmota WifiScan responses.
+
+    Each discovered network arrives as a separate JSON line:
+        {"WifiScan":{"AP":1,"SSId":"HomeNetwork","RSSI":-65,"Enc":4}}
+    The scan ends with:
+        {"WifiScan":"Done"}
+
+    Returns list of dicts: [{"ssid": ..., "rssi": ..., "enc": ...}, ...]
+    sorted by signal strength (strongest first), duplicates removed.
+    """
+    ENC_LABEL = {0: "Nyílt", 1: "WEP", 2: "WPA", 3: "WPA2", 4: "WPA2", 5: "WPA3"}
+    seen: dict[str, dict] = {}
+    for line in lines:
+        if "WifiScan" not in line:
+            continue
+        data = _extract_json_block(line)
+        if not data:
+            continue
+        entry = data.get("WifiScan", {})
+        if not isinstance(entry, dict):
+            continue
+        ssid = entry.get("SSId", "")
+        rssi = entry.get("RSSI", -100)
+        enc  = ENC_LABEL.get(entry.get("Enc", 3), "WPA2")
+        if ssid:
+            # Keep strongest signal if duplicate SSID
+            if ssid not in seen or rssi > seen[ssid]["rssi"]:
+                seen[ssid] = {"ssid": ssid, "rssi": rssi, "enc": enc}
+    return sorted(seen.values(), key=lambda x: x["rssi"], reverse=True)
+
+
 from tasmota_manager.board_layouts import MODULE_SELECT_OPTIONS, D1_MINI
 from tasmota_manager.config_builder import (
     GPIO_FUNCTION_TYPES,
@@ -254,6 +287,25 @@ class ConfigTab(TabPane):
             with Horizontal(id="config-top-panels"):
                 with Vertical(id="wifi-panel"):
                     yield Static("WiFi", classes="section-title")
+
+                    # --- Scan row (always visible) ---
+                    with Horizontal(id="wifi-scan-row"):
+                        yield Button("📡 Szkennelés", id="wifi-scan-btn", variant="default")
+                        yield Label("", id="wifi-scan-status")
+
+                    # --- Scan results (hidden until scan runs) ---
+                    with Vertical(id="wifi-scan-results"):
+                        yield Select(
+                            options=[],
+                            id="wifi-scan-select",
+                            allow_blank=True,
+                            prompt="– válassz hálózatot –",
+                        )
+                        with Horizontal(id="wifi-pick-row"):
+                            yield Button("→ SSID 1-be", id="wifi-pick-ssid1", variant="success")
+                            yield Button("→ SSID 2-be", id="wifi-pick-ssid2", variant="default")
+
+                    # --- Manual input rows ---
                     with Horizontal(classes="row"):
                         yield Label("SSID 1:", classes="label")
                         yield Input(placeholder="pl. HomeNetwork", id="cfg-ssid1")
@@ -352,6 +404,10 @@ class ConfigTab(TabPane):
             self._save_profile()
         elif bid == "cfg-fetch-btn":
             self.run_worker(self._fetch_config_from_device(), name="cfg_fetch")
+        elif bid == "wifi-scan-btn":
+            self.run_worker(self._do_wifi_scan(), name="wifi_scan")
+        elif bid in ("wifi-pick-ssid1", "wifi-pick-ssid2"):
+            self._pick_wifi_to_input(bid)
         elif bid == "gpio-add-btn":
             self._add_gpio_row()
         elif bid.startswith("gpio-del-"):
@@ -702,6 +758,73 @@ class ConfigTab(TabPane):
             self.notify(f"Lekérési hiba: {exc}", severity="error")
         finally:
             fetch_btn.disabled = False
+
+    # ------------------------------------------------------------------
+    # WiFi scan
+    # ------------------------------------------------------------------
+
+    async def _do_wifi_scan(self) -> None:
+        """Send WifiScan to connected device and populate the scan results Select."""
+        serial_bridge = self.app.serial_bridge  # type: ignore[attr-defined]
+        status_lbl: Label = self.query_one("#wifi-scan-status")
+        scan_btn: Button = self.query_one("#wifi-scan-btn")
+
+        if not serial_bridge.is_connected:
+            self.notify(
+                "Nincs soros port kapcsolat!\nCsatlakozz a Serial tabon, majd próbáld újra.",
+                severity="warning",
+            )
+            return
+
+        scan_btn.disabled = True
+        status_lbl.update("[yellow]Szkennelés…[/yellow]")
+
+        try:
+            serial_bridge.clear_buffer()
+            serial_bridge.send("WifiScan")
+            # ESP8266 scan ~3-4 s, ESP32 can be faster
+            await asyncio.sleep(5.0)
+
+            lines = list(serial_bridge.line_buffer)
+            networks = parse_wifi_scan(lines)
+
+            scan_sel: Select = self.query_one("#wifi-scan-select")
+            results_panel = self.query_one("#wifi-scan-results")
+
+            if not networks:
+                status_lbl.update("[red]Nem találtam hálózatot[/red]")
+                results_panel.add_class("hidden")
+            else:
+                options = [
+                    (f"{n['ssid']}  ({n['rssi']} dBm, {n['enc']})", n["ssid"])
+                    for n in networks
+                ]
+                scan_sel.set_options(options)
+                results_panel.remove_class("hidden")
+                status_lbl.update(
+                    f"[green]{len(networks)} hálózat találva[/green]"
+                )
+
+        except Exception as exc:
+            status_lbl.update(f"[red]Hiba: {exc}[/red]")
+        finally:
+            scan_btn.disabled = False
+
+    def _pick_wifi_to_input(self, btn_id: str) -> None:
+        """Copy the selected scanned SSID into the SSID1 or SSID2 input."""
+        scan_sel: Select = self.query_one("#wifi-scan-select")
+        if scan_sel.value is Select.BLANK:
+            self.notify("Előbb válassz hálózatot a listából!", severity="warning")
+            return
+        ssid = str(scan_sel.value)
+        target = "#cfg-ssid1" if btn_id == "wifi-pick-ssid1" else "#cfg-ssid2"
+        self._set_input(target, ssid)
+        inp: Input = self.query_one(target)
+        inp.focus()
+        self.notify(
+            f"SSID beállítva: {ssid}",
+            severity="information",
+        )
 
     def _set_input(self, widget_id: str, value: str) -> None:
         try:
