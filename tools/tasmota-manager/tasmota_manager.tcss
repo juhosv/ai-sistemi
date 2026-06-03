@@ -289,61 +289,138 @@ TabbedContent ContentSwitcher {
     margin: 0 1 0 0;
 }
 
+/* ------------------------------------------------------------------ */
+/* GPIO – interactive board diagram                                     */
+/* ------------------------------------------------------------------ */
+
 #gpio-panel {
     border: solid $primary-darken-2;
     margin: 0 0 1 0;
-    padding: 0 1 1 1;
-    height: auto;
-}
-
-.gpio-row {
+    padding: 0 0 1 0;
     height: auto;
     layout: horizontal;
-    align: left top;
+}
+
+#gpio-board-col {
+    width: 1fr;
+    min-width: 28;
+    padding: 0 1;
+    height: auto;
+}
+
+#gpio-config-col {
+    width: 1fr;
+    min-width: 34;
+    border-left: solid $primary-darken-2;
+    padding: 0 1;
+    height: auto;
+}
+
+#gpio-board-hint {
     margin: 0 0 1 0;
-    padding: 0 0 0 1;
 }
 
-.gpio-pin-label {
+#gpio-diagram-container {
+    height: auto;
+}
+
+/* The interactive board: two pin columns + chip body */
+.ibd-columns {
+    height: auto;
+    align: center top;
+}
+
+.ibd-col {
+    height: auto;
+    width: auto;
+}
+
+.ibd-chip-body {
     width: 14;
-    height: 3;
-    content-align: right middle;
+    min-height: 6;
+    align: center middle;
+    border: solid $primary-darken-3;
+    margin: 1 1;
+}
+
+.ibd-chip-label {
+    text-align: center;
     color: $text-muted;
-    padding: 0 1 0 0;
+    width: 12;
 }
 
-.gpio-select {
-    width: 38;
-}
-
-.gpio-instance-badge {
+/* GPIO pin buttons */
+.ibd-pin-gpio {
     width: 12;
     height: 3;
-    content-align: left middle;
-    color: $accent;
-    padding: 0 1;
+    margin: 0 0 0 0;
+}
+
+/* Non-configurable pin labels */
+.ibd-pin-power,
+.ibd-pin-uart,
+.ibd-pin-adc {
+    width: 12;
+    height: 3;
+    color: $text-disabled;
+    content-align: center middle;
+    text-style: dim;
+    border: dashed $surface-lighten-1;
+    margin: 0 0 0 0;
+}
+
+.ibd-pin-power {
+    color: $error-darken-1;
+}
+
+.ibd-pin-uart {
+    color: $warning-darken-2;
+}
+
+/* Pin config flyout */
+#gpio-config-placeholder {
+    margin: 2 0;
+}
+
+#gpio-pin-form {
+    height: auto;
+}
+
+#gpio-pin-form.hidden {
+    display: none;
+}
+
+.gpio-pin-header {
+    margin: 0 0 1 0;
+    text-style: bold;
+}
+
+#gpio-pin-boot-warn {
+    height: auto;
+    margin: 0 0 1 0;
+}
+
+#gpio-func-select {
+    width: 100%;
 }
 
 .gpio-hint {
     color: $text-disabled;
-    height: 1;
-    margin: 0 0 0 1;
-    padding: 0 0 0 14;
+    height: auto;
+    margin: 0 0 1 0;
 }
 
 .gpio-mqtt-hint {
     color: $success-darken-2;
-    height: 1;
-    margin: 0 0 0 1;
-    padding: 0 0 0 14;
+    height: auto;
+    margin: 0 0 1 0;
 }
 
-#gpio-add-row {
+#gpio-config-btns {
     height: 3;
     layout: horizontal;
     align: left middle;
-    padding: 0 0 0 14;
-    margin: 0 0 1 0;
+    margin: 1 0 0 0;
 }
 
 #config-preview {

@@ -10,6 +10,7 @@ from typing import Optional
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical, ScrollableContainer
 from textual.reactive import reactive
+from textual.widget import Widget
 from textual.widgets import (
     Button,
     DataTable,
@@ -217,7 +218,13 @@ def parse_wifi_scan(lines: list[str]) -> list[dict]:
     return sorted(seen.values(), key=lambda x: x["rssi"], reverse=True)
 
 
-from tasmota_manager.board_layouts import MODULE_SELECT_OPTIONS, D1_MINI
+from tasmota_manager.board_layouts import (
+    BOARD_BY_NAME,
+    BoardLayout,
+    D1_MINI,
+    MODULE_SELECT_OPTIONS,
+    PinDef,
+)
 from tasmota_manager.config_builder import (
     GPIO_FUNCTION_TYPES,
     GPIO_TYPE_BY_ID,
@@ -235,60 +242,109 @@ from tasmota_manager.config_builder import (
 
 
 _GPIO_SELECT_OPTIONS = gpio_select_options()
+_GPIO_SELECT_OPTIONS_CLEAN = [
+    (lbl, val) for lbl, val in _GPIO_SELECT_OPTIONS
+    if not val.startswith("__sep_")
+]
 
 
-class GpioRow(Vertical):
-    """A single GPIO assignment row: pin label + function select + info."""
+class InteractiveBoardDiagram(Widget):
+    """Interactive board pinout diagram for the Config tab.
 
-    def __init__(self, gpio_num: int, type_id: str = "none", *, chip: str = "ESP8266") -> None:
-        super().__init__(classes="gpio-row-container")
-        self._gpio_num = gpio_num
-        self._type_id = type_id
-        self._chip = chip
+    GPIO pins render as clickable Buttons (green = assigned, default = unassigned,
+    yellow = currently selected). Power / UART / ADC pins are non-interactive Labels.
+    Button.Pressed events bubble up naturally to ConfigTab for handling.
+    """
+
+    DEFAULT_CSS = ""
+
+    def __init__(
+        self,
+        layout: BoardLayout,
+        assignments: dict[int, str],
+        **kwargs,
+    ) -> None:
+        super().__init__(**kwargs)
+        self._layout = layout
+        self._assignments = dict(assignments)
 
     def compose(self) -> ComposeResult:
-        d_alias = self._d_alias()
-        if d_alias:
-            pin_label = f"GPIO{self._gpio_num} ({d_alias}):"
-        else:
-            pin_label = f"GPIO{self._gpio_num}:"
+        left_pins = sorted(
+            [p for p in self._layout.pins if p.side == "left"],
+            key=lambda p: p.row,
+        )
+        right_pins = sorted(
+            [p for p in self._layout.pins if p.side == "right"],
+            key=lambda p: p.row,
+        )
+        with Horizontal(classes="ibd-columns"):
+            with Vertical(classes="ibd-col ibd-left"):
+                for pin in left_pins:
+                    yield self._pin_widget(pin)
+            with Vertical(classes="ibd-chip-body"):
+                yield Static(f"\n{self._layout.chip}\n", classes="ibd-chip-label")
+            with Vertical(classes="ibd-col ibd-right"):
+                for pin in right_pins:
+                    yield self._pin_widget(pin)
 
-        # Filter out separator entries from options
-        real_options = [
-            (lbl, val) for lbl, val in _GPIO_SELECT_OPTIONS
-            if not val.startswith("__sep_")
-        ]
-
-        with Horizontal(classes="gpio-row"):
-            yield Label(pin_label, classes="gpio-pin-label")
-            yield Select(
-                options=real_options,
-                value=self._type_id,
-                id=f"gpio-sel-{self._gpio_num}",
-                classes="gpio-select",
-                allow_blank=False,
+    def _pin_widget(self, pin: PinDef) -> Button | Static:
+        """Button for a configurable GPIO; Label for power/UART/ADC pins."""
+        gpio = pin.gpio
+        configurable = (
+            gpio is not None
+            and not pin.is_power
+            and not pin.is_uart
+            and not pin.adc_only
+        )
+        if configurable:
+            assigned = self._assignments.get(gpio)
+            has_assign = bool(assigned and assigned != "none")
+            boot = "⚠" if pin.boot_sensitive else ""
+            if has_assign:
+                label = f"{boot}{pin.label} ✓"
+                variant = "success"
+            else:
+                label = f"{boot}{pin.label}"
+                variant = "default"
+            return Button(
+                label,
+                id=f"cfgpin_{gpio}",
+                classes="ibd-pin-gpio" + (" ibd-pin-boot" if pin.boot_sensitive else ""),
+                variant=variant,
             )
-            yield Label("", id=f"gpio-badge-{self._gpio_num}", classes="gpio-instance-badge")
-            yield Button("✕", id=f"gpio-del-{self._gpio_num}", variant="error")
+        else:
+            if pin.is_power:
+                classes = "ibd-pin-power"
+            elif pin.is_uart:
+                classes = "ibd-pin-uart"
+            else:
+                classes = "ibd-pin-adc"
+            return Static(f" {pin.label} ", classes=classes)
 
-        yield Label("", id=f"gpio-hint-{self._gpio_num}", classes="gpio-hint")
-        yield Label("", id=f"gpio-mqtt-hint-{self._gpio_num}", classes="gpio-mqtt-hint")
-
-    def _d_alias(self) -> str:
-        aliases = {16: "D0", 5: "D1", 4: "D2", 0: "D3", 2: "D4",
-                   14: "D5", 12: "D6", 13: "D7", 15: "D8"}
-        return aliases.get(self._gpio_num, "") if self._chip == "ESP8266" else ""
-
-    @property
-    def gpio_num(self) -> int:
-        return self._gpio_num
+    def update_pin(self, gpio_num: int, type_id: str) -> None:
+        """Refresh a single pin button after an assignment change."""
+        try:
+            btn: Button = self.query_one(f"#cfgpin_{gpio_num}")
+            pin = self._layout.pin_by_gpio(gpio_num)
+            pin_label = pin.label if pin else f"G{gpio_num}"
+            boot = "⚠" if (pin and pin.boot_sensitive) else ""
+            if type_id and type_id != "none":
+                btn.label = f"{boot}{pin_label} ✓"
+                btn.variant = "success"
+            else:
+                btn.label = f"{boot}{pin_label}"
+                btn.variant = "default"
+            self._assignments[gpio_num] = type_id
+        except Exception:
+            pass
 
 
 class ConfigTab(TabPane):
     """Full device configuration editor."""
 
     DEFAULT_CSS = ""
-    _current_gpio_rows: list[int] = []   # list of gpio numbers in order
+    _gpio_assignments: dict[int, str]   # gpio_num → type_id
+    _selected_gpio: Optional[int]       # currently selected pin in the diagram
 
     def compose(self) -> ComposeResult:
         with ScrollableContainer(id="config-tab"):
@@ -396,17 +452,38 @@ class ConfigTab(TabPane):
                         )
 
             # --- GPIO assignment ----------------------------------------
-            with Vertical(id="gpio-panel"):
-                yield Static("GPIO kiosztás", classes="section-title")
-                yield Vertical(id="gpio-rows-container")
-                with Horizontal(id="gpio-add-row"):
-                    yield Label("Új GPIO:", classes="label")
-                    yield Select(
-                        options=self._gpio_num_options(),
-                        id="gpio-new-num-select",
-                        allow_blank=False,
+            with Horizontal(id="gpio-panel"):
+                # Left: Interactive board diagram
+                with Vertical(id="gpio-board-col"):
+                    yield Static("GPIO kiosztás", classes="section-title")
+                    yield Label(
+                        "Kattints egy [bold]GPIO[/bold] pinre a funkció beállításához",
+                        id="gpio-board-hint",
+                        classes="hint",
                     )
-                    yield Button("+ GPIO hozzáadása", id="gpio-add-btn", variant="default")
+                    yield Vertical(id="gpio-diagram-container")
+                # Right: Pin configuration flyout
+                with Vertical(id="gpio-config-col"):
+                    yield Static("Pin beállítás", classes="section-title")
+                    yield Label(
+                        "← Kattints egy GPIO pinre",
+                        id="gpio-config-placeholder",
+                        classes="hint",
+                    )
+                    with Vertical(id="gpio-pin-form", classes="hidden"):
+                        yield Label("", id="gpio-pin-header", classes="gpio-pin-header")
+                        yield Label("", id="gpio-pin-boot-warn")
+                        yield Label("Funkció:", classes="label")
+                        yield Select(
+                            options=_GPIO_SELECT_OPTIONS_CLEAN,
+                            id="gpio-func-select",
+                            allow_blank=False,
+                        )
+                        yield Label("", id="gpio-func-hint", classes="gpio-hint")
+                        yield Label("", id="gpio-func-mqtt", classes="gpio-mqtt-hint")
+                        with Horizontal(id="gpio-config-btns"):
+                            yield Button("✓ Beállítás", id="gpio-set-btn", variant="success")
+                            yield Button("✗ Törlés", id="gpio-clear-btn", variant="warning")
 
             # --- Preview table ------------------------------------------
             with Vertical(id="config-preview"):
@@ -423,10 +500,12 @@ class ConfigTab(TabPane):
     # ------------------------------------------------------------------
 
     def on_mount(self) -> None:
+        self._gpio_assignments = {}
+        self._selected_gpio = None
         table: DataTable = self.query_one("#config-preview-table")
         table.add_columns("Parancs", "Érték")
-        self._update_preview()
         self._refresh_profiles()
+        self.call_after_refresh(self._rebuild_board_diagram)
 
     # ------------------------------------------------------------------
     # Button handlers
@@ -444,103 +523,209 @@ class ConfigTab(TabPane):
             self.run_worker(self._do_wifi_scan(), name="wifi_scan")
         elif bid in ("wifi-pick-ssid1", "wifi-pick-ssid2"):
             self._pick_wifi_to_input(bid)
-        elif bid == "gpio-add-btn":
-            self._add_gpio_row()
-        elif bid.startswith("gpio-del-"):
-            gpio_num = int(bid.split("-")[-1])
-            self._remove_gpio_row(gpio_num)
+        elif bid.startswith("cfgpin_"):
+            gpio_num = int(bid.split("_", 1)[1])
+            self._show_pin_config(gpio_num)
+        elif bid == "gpio-set-btn":
+            self._set_pin()
+        elif bid == "gpio-clear-btn":
+            self._clear_pin()
         elif bid == "cfg-send-serial-btn":
             self._send_via_serial()
         elif bid == "cfg-send-mqtt-btn":
             self._send_via_mqtt()
 
     def on_select_changed(self, event: Select.Changed) -> None:
-        if event.select.id and event.select.id.startswith("gpio-sel-"):
-            self._update_gpio_hints()
+        sid = event.select.id or ""
+        if sid == "cfg-module":
+            self._rebuild_board_diagram()
             self._update_preview()
+        elif sid == "gpio-func-select":
+            self._update_func_preview()
 
     def on_input_changed(self, event: Input.Changed) -> None:
         self._update_preview()
 
     # ------------------------------------------------------------------
-    # GPIO management
+    # GPIO management – interactive board diagram
     # ------------------------------------------------------------------
 
-    def _add_gpio_row(self) -> None:
-        sel: Select = self.query_one("#gpio-new-num-select")
-        v = sel.value
-        if v is Select.BLANK:
-            return
-        gpio_num = int(v)
-        if gpio_num in self._current_gpio_rows:
-            return
-        self._current_gpio_rows.append(gpio_num)
-        container: Vertical = self.query_one("#gpio-rows-container")
-        row = GpioRow(gpio_num, "none")
-        container.mount(row)
-        self._update_gpio_hints()
-        self._update_preview()
+    def _get_gpio_assignments(self) -> dict[int, str]:
+        """Return current GPIO assignments, excluding unset ('none') pins."""
+        return {k: v for k, v in self._gpio_assignments.items() if v and v != "none"}
 
-    def _remove_gpio_row(self, gpio_num: int) -> None:
-        if gpio_num in self._current_gpio_rows:
-            self._current_gpio_rows.remove(gpio_num)
+    def _get_current_board(self) -> Optional[BoardLayout]:
+        """Return the BoardLayout matching the currently selected module."""
         try:
-            rows = self.query(GpioRow)
-            for row in rows:
-                if row.gpio_num == gpio_num:
-                    row.remove()
-                    break
+            sel: Select = self.query_one("#cfg-module")
+            if sel.value is not Select.BLANK:
+                return BOARD_BY_NAME.get(str(sel.value))
         except Exception:
             pass
-        self._update_gpio_hints()
+        return None
+
+    def _rebuild_board_diagram(self) -> None:
+        """Remove and re-mount the InteractiveBoardDiagram for the selected board."""
+        board = self._get_current_board()
+        if not board:
+            return
+        try:
+            container = self.query_one("#gpio-diagram-container")
+        except Exception:
+            return
+        container.remove_children()
+        diag = InteractiveBoardDiagram(
+            board, self._gpio_assignments, id="gpio-interactive-board"
+        )
+        container.mount(diag)
+        # If the selected pin doesn't exist on the new board, hide the config panel
+        if self._selected_gpio is not None and not board.pin_by_gpio(self._selected_gpio):
+            self._selected_gpio = None
+            try:
+                self.query_one("#gpio-pin-form").add_class("hidden")
+                self.query_one("#gpio-config-placeholder").remove_class("hidden")
+            except Exception:
+                pass
         self._update_preview()
 
-    def _get_gpio_assignments(self) -> dict[int, str]:
-        result: dict[int, str] = {}
-        for gpio_num in self._current_gpio_rows:
-            try:
-                sel: Select = self.query_one(f"#gpio-sel-{gpio_num}")
-                v = sel.value
-                if v and v is not Select.BLANK:
-                    result[gpio_num] = str(v)
-            except Exception:
-                pass
-        return result
+    def _show_pin_config(self, gpio_num: int) -> None:
+        """Highlight the clicked pin and populate the right-side config panel."""
+        # Deselect previous pin
+        if self._selected_gpio is not None and self._selected_gpio != gpio_num:
+            self._refresh_pin_button(self._selected_gpio)
 
-    def _update_gpio_hints(self) -> None:
-        assignments = self._get_gpio_assignments()
-        instances = compute_gpio_instances(assignments)
-        codes = assign_tasmota_codes(assignments)
+        self._selected_gpio = gpio_num
 
-        for gpio_num, type_id in assignments.items():
+        # Highlight selected pin
+        try:
+            btn: Button = self.query_one(f"#cfgpin_{gpio_num}")
+            btn.variant = "warning"
+        except Exception:
+            pass
+
+        # Gather pin metadata
+        board = self._get_current_board()
+        pin = board.pin_by_gpio(gpio_num) if board else None
+        d_alias = (board.gpio_to_dpin.get(gpio_num, "") if board else "")
+
+        parts = [f"GPIO {gpio_num}"]
+        if d_alias:
+            parts.append(d_alias)
+        if pin:
+            parts.append(f"({pin.label})")
+        self.query_one("#gpio-pin-header").update(
+            "[bold]" + " / ".join(parts) + "[/bold]"
+        )
+
+        boot_warn: Label = self.query_one("#gpio-pin-boot-warn")
+        if pin and pin.boot_sensitive:
+            boot_warn.update(
+                "[yellow]⚠  Boot-sensitive – befolyásolhatja az indítást[/yellow]"
+            )
+        else:
+            boot_warn.update("")
+
+        # Set current function in the select
+        func_sel: Select = self.query_one("#gpio-func-select")
+        func_sel.value = self._gpio_assignments.get(gpio_num, "none")
+
+        # Show the form
+        self.query_one("#gpio-config-placeholder").add_class("hidden")
+        self.query_one("#gpio-pin-form").remove_class("hidden")
+
+        self._update_func_preview()
+
+    def _refresh_pin_button(self, gpio_num: int) -> None:
+        """Reset a pin button to its normal (non-selected) appearance."""
+        try:
+            btn: Button = self.query_one(f"#cfgpin_{gpio_num}")
+            assigned = self._gpio_assignments.get(gpio_num)
+            if assigned and assigned != "none":
+                btn.variant = "success"
+            else:
+                btn.variant = "default"
+        except Exception:
+            pass
+
+    def _set_pin(self) -> None:
+        """Save the selected function for the currently highlighted pin."""
+        if self._selected_gpio is None:
+            return
+        func_sel: Select = self.query_one("#gpio-func-select")
+        if func_sel.value is Select.BLANK:
+            return
+        type_id = str(func_sel.value)
+        self._gpio_assignments[self._selected_gpio] = type_id
+        try:
+            diag: InteractiveBoardDiagram = self.query_one(InteractiveBoardDiagram)
+            diag.update_pin(self._selected_gpio, type_id)
+        except Exception:
+            pass
+        # Mark button as selected (warning) again after update_pin resets it
+        try:
+            btn: Button = self.query_one(f"#cfgpin_{self._selected_gpio}")
+            btn.variant = "warning"
+        except Exception:
+            pass
+        self._update_preview()
+        self._update_func_preview()
+        gt = GPIO_TYPE_BY_ID.get(type_id)
+        label = gt.label if gt else type_id
+        self.notify(f"GPIO {self._selected_gpio} → {label}", severity="information")
+
+    def _clear_pin(self) -> None:
+        """Remove the assignment for the currently highlighted pin."""
+        if self._selected_gpio is None:
+            return
+        self._gpio_assignments.pop(self._selected_gpio, None)
+        try:
+            diag: InteractiveBoardDiagram = self.query_one(InteractiveBoardDiagram)
+            diag.update_pin(self._selected_gpio, "none")
+        except Exception:
+            pass
+        # Keep pin highlighted as selected
+        try:
+            btn: Button = self.query_one(f"#cfgpin_{self._selected_gpio}")
+            btn.variant = "warning"
+        except Exception:
+            pass
+        func_sel: Select = self.query_one("#gpio-func-select")
+        func_sel.value = "none"
+        self._update_preview()
+        self._update_func_preview()
+        self.notify(f"GPIO {self._selected_gpio} törölve", severity="information")
+
+    def _update_func_preview(self) -> None:
+        """Update the hint / MQTT label in the pin config panel."""
+        if self._selected_gpio is None:
+            return
+        try:
+            func_sel: Select = self.query_one("#gpio-func-select")
+            type_id = str(func_sel.value) if func_sel.value is not Select.BLANK else "none"
+            hint_lbl: Label = self.query_one("#gpio-func-hint")
+            mqtt_lbl: Label = self.query_one("#gpio-func-mqtt")
+            if type_id == "none":
+                hint_lbl.update("")
+                mqtt_lbl.update("")
+                return
             gt = GPIO_TYPE_BY_ID.get(type_id)
-            instance_name = instances.get(gpio_num, "")
-            tasmota_code = codes.get(gpio_num, 0)
-
-            try:
-                badge: Label = self.query_one(f"#gpio-badge-{gpio_num}")
-                badge.update(f"→ {instance_name}" if instance_name and type_id != "none" else "")
-            except Exception:
-                pass
-
-            try:
-                hint: Label = self.query_one(f"#gpio-hint-{gpio_num}")
-                hint.update(gt.description if gt and gt.description else "")
-            except Exception:
-                pass
-
-            try:
-                mqtt_hint: Label = self.query_one(f"#gpio-mqtt-hint-{gpio_num}")
-                if gt and gt.mqtt_example and type_id != "none":
-                    n = instances.get(gpio_num, "?")
-                    # Extract instance number suffix
-                    num_part = "".join(c for c in n if c.isdigit()) or "1"
-                    example = gt.mqtt_example.replace("{n}", num_part)
-                    mqtt_hint.update(f"MQTT: {example}")
-                else:
-                    mqtt_hint.update("")
-            except Exception:
-                pass
+            if not gt:
+                return
+            hint_lbl.update(f"[dim]{gt.description}[/dim]" if gt.description else "")
+            if gt.mqtt_example:
+                preview = dict(self._gpio_assignments)
+                preview[self._selected_gpio] = type_id
+                instances = compute_gpio_instances(preview)
+                n = instances.get(self._selected_gpio, "?")
+                num_part = "".join(c for c in n if c.isdigit()) or "1"
+                example = gt.mqtt_example.replace("{n}", num_part)
+                mqtt_lbl.update(
+                    f"[cyan]→ Tasmota: {n}[/cyan]   [dim]MQTT: {example}[/dim]"
+                )
+            else:
+                mqtt_lbl.update("")
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     # Preview table
@@ -663,18 +848,15 @@ class ConfigTab(TabPane):
         except Exception:
             pass
 
-        # Reload GPIO rows
-        container: Vertical = self.query_one("#gpio-rows-container")
-        container.remove_children()
-        self._current_gpio_rows.clear()
-
-        for gpio_str, type_id in cfg.gpio.items():
-            gpio_num = int(gpio_str)
-            self._current_gpio_rows.append(gpio_num)
-            container.mount(GpioRow(gpio_num, type_id))
-
-        self._update_gpio_hints()
-        self._update_preview()
+        # Load GPIO assignments and rebuild the visual diagram
+        self._gpio_assignments = {int(k): v for k, v in cfg.gpio.items()}
+        self._selected_gpio = None
+        try:
+            self.query_one("#gpio-pin-form").add_class("hidden")
+            self.query_one("#gpio-config-placeholder").remove_class("hidden")
+        except Exception:
+            pass
+        self.call_after_refresh(self._rebuild_board_diagram)
 
     # ------------------------------------------------------------------
     # Sending config
@@ -945,10 +1127,3 @@ class ConfigTab(TabPane):
     # Helpers
     # ------------------------------------------------------------------
 
-    def _gpio_num_options(self) -> list[tuple[str, int]]:
-        esp8266_gpios = [(f"GPIO{n} (D{d})", n) for n, d in
-                         [(16, 0), (5, 1), (4, 2), (0, 3), (2, 4),
-                          (14, 5), (12, 6), (13, 7), (15, 8)]]
-        esp32_extra = [(f"GPIO{n}", n) for n in
-                       [17, 18, 19, 21, 22, 23, 25, 26, 27, 32, 33, 34, 35, 36, 39]]
-        return esp8266_gpios + esp32_extra
