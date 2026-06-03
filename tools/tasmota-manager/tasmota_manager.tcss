@@ -115,6 +115,28 @@ TabbedContent ContentSwitcher {
     margin: 0 0 1 0;
 }
 
+#serial-log-bar {
+    height: 1;
+    layout: horizontal;
+    align: left middle;
+    padding: 0 1;
+    background: $surface-darken-1;
+}
+
+#serial-log-path {
+    height: 1;
+    width: 1fr;
+    color: $text-muted;
+}
+
+#serial-open-log-dir {
+    height: 1;
+    min-width: 3;
+    border: none;
+    background: transparent;
+    padding: 0 1;
+}
+
 #serial-wifi-bar {
     height: 1;
     layout: horizontal;

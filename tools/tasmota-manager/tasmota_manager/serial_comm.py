@@ -5,10 +5,15 @@ import asyncio
 import collections
 import threading
 import time
-from typing import Callable, Optional
+from datetime import datetime
+from pathlib import Path
+from typing import IO, Callable, Optional
 
 import serial
 import serial.tools.list_ports
+
+# Default directory for serial log files (relative to this module's parent)
+_DEFAULT_LOG_DIR = Path(__file__).parent.parent / "logs"
 
 
 class SerialComm:
@@ -115,6 +120,9 @@ class AsyncSerialBridge:
 
     Also maintains a rolling line buffer so other modules can inspect
     recent output (e.g. to parse Status responses after a query).
+
+    All sent and received data is automatically written to a log file
+    in the logs/ directory whenever a connection is active.
     """
 
     BUFFER_SIZE = 500
@@ -129,24 +137,103 @@ class AsyncSerialBridge:
         )
         # Detected chip family, updated by chip detection logic
         self.detected_chip: Optional[str] = None
+        # Log file (opened on connect, closed on disconnect)
+        self._log_file: Optional[IO[str]] = None
+        self._log_path: Optional[Path] = None
+        self._log_lock = threading.Lock()
+
+    # ------------------------------------------------------------------
+    # Connection
+    # ------------------------------------------------------------------
 
     def connect(self, port: str, baud: int = 115200) -> None:
         self._loop = asyncio.get_event_loop()
         self.comm.on_line = self._enqueue
+        self._open_log(port, baud)
         self.comm.connect(port, baud)
 
     def disconnect(self) -> None:
         self.comm.disconnect()
         self.detected_chip = None
+        self._close_log()
+
+    # ------------------------------------------------------------------
+    # Sending
+    # ------------------------------------------------------------------
 
     def send(self, command: str) -> None:
         self.comm.send(command)
+        # Log outgoing command (called from any thread)
+        self._write_log("TX", command.strip())
 
     def clear_buffer(self) -> None:
         self.line_buffer.clear()
 
+    # ------------------------------------------------------------------
+    # Log file management
+    # ------------------------------------------------------------------
+
+    @property
+    def log_path(self) -> Optional[Path]:
+        """Currently active log file path, or None if not logging."""
+        return self._log_path
+
+    def _open_log(self, port: str, baud: int) -> None:
+        """Open a new timestamped log file for this connection session."""
+        self._close_log()
+        try:
+            log_dir = _DEFAULT_LOG_DIR
+            log_dir.mkdir(parents=True, exist_ok=True)
+            ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+            safe_port = port.replace("/", "_").replace("\\", "_").replace(":", "")
+            filename = f"serial_{ts}_{safe_port}.log"
+            path = log_dir / filename
+            self._log_file = path.open("w", encoding="utf-8", buffering=1)
+            self._log_path = path
+            # Write session header
+            self._log_file.write(
+                f"# SmartBlue Tasmota Manager – Serial Log\n"
+                f"# Port: {port}  Baud: {baud}\n"
+                f"# Session started: {datetime.now().isoformat()}\n"
+                f"# Format: TIMESTAMP  TX/RX  DATA\n"
+                f"# TX = sent to device, RX = received from device\n\n"
+            )
+            self._log_file.flush()
+        except Exception:
+            self._log_file = None
+            self._log_path = None
+
+    def _close_log(self) -> None:
+        with self._log_lock:
+            if self._log_file:
+                try:
+                    self._log_file.write(
+                        f"\n# Session ended: {datetime.now().isoformat()}\n"
+                    )
+                    self._log_file.close()
+                except Exception:
+                    pass
+                self._log_file = None
+            self._log_path = None
+
+    def _write_log(self, direction: str, data: str) -> None:
+        """Write a line to the log file (thread-safe)."""
+        with self._log_lock:
+            if self._log_file:
+                try:
+                    ts = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+                    self._log_file.write(f"{ts}  {direction}  {data}\n")
+                except Exception:
+                    pass
+
+    # ------------------------------------------------------------------
+    # Internal
+    # ------------------------------------------------------------------
+
     def _enqueue(self, line: str) -> None:
         self.line_buffer.append(line)
+        # Log incoming line (called from reader thread)
+        self._write_log("RX", line)
         if self._loop and self._loop.is_running():
             self._loop.call_soon_threadsafe(self.queue.put_nowait, line)
 

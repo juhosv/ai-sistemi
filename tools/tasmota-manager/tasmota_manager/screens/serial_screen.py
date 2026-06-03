@@ -98,6 +98,12 @@ class SerialTab(TabPane):
                 yield Button("Törlés", id="serial-clear-btn", variant="default")
                 yield Label("", id="serial-status-label")
 
+            # --- Log file status bar ------------------------------------
+            with Horizontal(id="serial-log-bar"):
+                yield Static("Log:", classes="label")
+                yield Label("– (csatlakozáskor indul)", id="serial-log-path")
+                yield Button("📂", id="serial-open-log-dir", variant="default")
+
             # --- WiFi status bar ----------------------------------------
             with Horizontal(id="serial-wifi-bar"):
                 yield Static("WiFi:", classes="label")
@@ -149,6 +155,8 @@ class SerialTab(TabPane):
         elif btn_id == "serial-clear-btn":
             log: RichLog = self.query_one("#serial-output")
             log.clear()
+        elif btn_id == "serial-open-log-dir":
+            self._open_log_directory()
         elif btn_id.startswith("qcmd_"):
             # Find matching quick command
             cmd_key = btn_id[5:].replace("_", " ")
@@ -178,6 +186,7 @@ class SerialTab(TabPane):
             lbl.update("Lecsatlakozva")
             self._log_line("[dim]── Kapcsolat bontva ──[/dim]")
             self._set_wifi_status(None, None, None, None)
+            self._update_log_bar(None)
         else:
             port = self._selected_port()
             baud = self._selected_baud()
@@ -191,6 +200,7 @@ class SerialTab(TabPane):
                 btn.variant = "error"
                 lbl.update(f"[green]● {port}  {baud} baud[/green]")
                 self._log_line(f"[green]── Kapcsolódva: {port} ({baud} baud) ──[/green]")
+                self._update_log_bar(serial_bridge.log_path)
             except Exception as exc:
                 lbl.update(f"[red]Hiba: {exc}[/red]")
 
@@ -453,6 +463,37 @@ class SerialTab(TabPane):
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    def _update_log_bar(self, log_path) -> None:
+        """Update the log file path label."""
+        lbl: Label = self.query_one("#serial-log-path")
+        if log_path is None:
+            lbl.update("[dim]– (csatlakozáskor indul)[/dim]")
+        else:
+            lbl.update(f"[green]● Rögzítés:[/green] [cyan]{log_path}[/cyan]")
+
+    def _open_log_directory(self) -> None:
+        """Open the logs directory in the OS file manager."""
+        import subprocess, sys
+        serial_bridge = self.app.serial_bridge  # type: ignore[attr-defined]
+        # Resolve log dir from the bridge or use default
+        from tasmota_manager.serial_comm import _DEFAULT_LOG_DIR
+        log_dir = _DEFAULT_LOG_DIR
+        log_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            if sys.platform == "win32":
+                # If a specific log file exists, open the folder and select it
+                lp = serial_bridge.log_path
+                if lp and lp.exists():
+                    subprocess.Popen(["explorer", "/select,", str(lp)])
+                else:
+                    subprocess.Popen(["explorer", str(log_dir)])
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", str(log_dir)])
+            else:
+                subprocess.Popen(["xdg-open", str(log_dir)])
+        except Exception as exc:
+            self.notify(f"Nem sikerült megnyitni: {exc}", severity="warning")
 
     def _refresh_ports(self) -> None:
         ports = list_serial_ports()
