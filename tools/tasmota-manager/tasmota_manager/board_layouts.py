@@ -227,7 +227,108 @@ ESP32_S3 = BoardLayout(
 )
 
 
-ALL_BOARDS: list[BoardLayout] = [D1_MINI, NODEMCU, ESP32_DEVKIT, ESP32_S3]
+# ---------------------------------------------------------------------------
+# ESP-WROOM32-CH340  (38-pin, identical pinout to DevKit V1, CH340 USB chip)
+# ---------------------------------------------------------------------------
+
+ESP32_WROOM_CH340 = BoardLayout(
+    name="ESP-WROOM32-CH340",
+    chip="ESP32",
+    display_width=58,
+    gpio_to_dpin={},
+    pins=[
+        # Left side (top → bottom)
+        PinDef("3V3",  None, "left",  0, is_power=True),
+        PinDef("EN",   None, "left",  1),
+        PinDef("VP",   36,   "left",  2, adc_only=True),
+        PinDef("VN",   39,   "left",  3, adc_only=True),
+        PinDef("34",   34,   "left",  4, adc_only=True),
+        PinDef("35",   35,   "left",  5, adc_only=True),
+        PinDef("32",   32,   "left",  6),
+        PinDef("33",   33,   "left",  7),
+        PinDef("25",   25,   "left",  8),
+        PinDef("26",   26,   "left",  9),
+        PinDef("27",   27,   "left",  10),
+        PinDef("14",   14,   "left",  11),
+        PinDef("12",   12,   "left",  12),
+        PinDef("GND",  None, "left",  13, is_power=True),
+        PinDef("13",   13,   "left",  14),
+        PinDef("D2",   9,    "left",  15),
+        PinDef("D3",   10,   "left",  16),
+        PinDef("CMD",  11,   "left",  17),
+        PinDef("5V",   None, "left",  18, is_power=True),
+        # Right side (top → bottom)
+        PinDef("GND",  None, "right", 0, is_power=True),
+        PinDef("23",   23,   "right", 1),
+        PinDef("22",   22,   "right", 2),
+        PinDef("TX",   1,    "right", 3, is_uart=True),
+        PinDef("RX",   3,    "right", 4, is_uart=True),
+        PinDef("21",   21,   "right", 5),
+        PinDef("GND",  None, "right", 6, is_power=True),
+        PinDef("19",   19,   "right", 7),
+        PinDef("18",   18,   "right", 8),
+        PinDef("5",    5,    "right", 9),
+        PinDef("17",   17,   "right", 10),
+        PinDef("16",   16,   "right", 11),
+        PinDef("4",    4,    "right", 12),
+        PinDef("0",    0,    "right", 13, boot_sensitive=True),
+        PinDef("2",    2,    "right", 14),
+        PinDef("15",   15,   "right", 15),
+        PinDef("D1",   8,    "right", 16),
+        PinDef("D0",   7,    "right", 17),
+        PinDef("CLK",  6,    "right", 18),
+    ],
+)
+
+# ---------------------------------------------------------------------------
+# ESP32-DEVKIT-32UE  (30-pin, U.FL external antenna – compact devkit)
+# ---------------------------------------------------------------------------
+
+ESP32_DEVKIT_32UE = BoardLayout(
+    name="ESP32-DEVKIT-32UE",
+    chip="ESP32",
+    display_width=52,
+    gpio_to_dpin={},
+    pins=[
+        # Left side (top → bottom)
+        PinDef("3V3",  None, "left",  0, is_power=True),
+        PinDef("EN",   None, "left",  1),
+        PinDef("VP",   36,   "left",  2, adc_only=True),
+        PinDef("VN",   39,   "left",  3, adc_only=True),
+        PinDef("34",   34,   "left",  4, adc_only=True),
+        PinDef("35",   35,   "left",  5, adc_only=True),
+        PinDef("32",   32,   "left",  6),
+        PinDef("33",   33,   "left",  7),
+        PinDef("25",   25,   "left",  8),
+        PinDef("26",   26,   "left",  9),
+        PinDef("27",   27,   "left",  10),
+        PinDef("14",   14,   "left",  11),
+        PinDef("12",   12,   "left",  12),
+        PinDef("GND",  None, "left",  13, is_power=True),
+        PinDef("13",   13,   "left",  14),
+        # Right side (top → bottom)
+        PinDef("GND",  None, "right", 0, is_power=True),
+        PinDef("23",   23,   "right", 1),
+        PinDef("22",   22,   "right", 2),
+        PinDef("TX",   1,    "right", 3, is_uart=True),
+        PinDef("RX",   3,    "right", 4, is_uart=True),
+        PinDef("21",   21,   "right", 5),
+        PinDef("GND",  None, "right", 6, is_power=True),
+        PinDef("19",   19,   "right", 7),
+        PinDef("18",   18,   "right", 8),
+        PinDef("5",    5,    "right", 9),
+        PinDef("17",   17,   "right", 10),
+        PinDef("16",   16,   "right", 11),
+        PinDef("4",    4,    "right", 12),
+        PinDef("0",    0,    "right", 13, boot_sensitive=True),
+        PinDef("2",    2,    "right", 14),
+    ],
+)
+
+
+ALL_BOARDS: list[BoardLayout] = [
+    D1_MINI, NODEMCU, ESP32_DEVKIT, ESP32_WROOM_CH340, ESP32_DEVKIT_32UE, ESP32_S3
+]
 BOARD_BY_NAME: dict[str, BoardLayout] = {b.name: b for b in ALL_BOARDS}
 
 CHIP_DEFAULT_BOARD: dict[str, str] = {
@@ -248,6 +349,8 @@ BOARD_TO_TASMOTA_MODULE: dict[str, int] = {
     "Wemos D1 Mini":         18,   # Generic ESP8266
     "NodeMCU v3 (ESP8266)":  18,   # Generic ESP8266
     "ESP32 DevKit V1":        0,   # Generic ESP32
+    "ESP-WROOM32-CH340":      0,   # Generic ESP32
+    "ESP32-DEVKIT-32UE":      0,   # Generic ESP32
     "ESP32-S3 DevKit":        0,   # Generic ESP32-S3
     "Sonoff Basic":           1,
     "Sonoff S20":             8,
