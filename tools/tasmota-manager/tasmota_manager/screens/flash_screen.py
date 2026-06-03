@@ -219,32 +219,47 @@ class FlashTab(TabPane):
             return None
         return FIRMWARE_VARIANTS[idx]
 
+    # ------------------------------------------------------------------
+    # Thread-safe UI helpers
+    # call_from_thread is only valid from a background thread;
+    # async workers run on the event loop thread → call widgets directly.
+    # ------------------------------------------------------------------
+
+    def _in_app_thread(self) -> bool:
+        import threading
+        return threading.current_thread() is threading.main_thread()
+
+    def _ui(self, fn, *args) -> None:
+        """Call *fn(*args)* safely from any thread or async context."""
+        if self._in_app_thread():
+            fn(*args)
+        else:
+            self.app.call_from_thread(fn, *args)
+
     def _log(self, msg: str) -> None:
         ts = datetime.now().strftime("%H:%M:%S")
         log: RichLog = self.query_one("#flash-log")
-        self.app.call_from_thread(log.write, f"[dim]{ts}[/dim]  {msg}")
+        self._ui(log.write, f"[dim]{ts}[/dim]  {msg}")
 
     def _update_progress(self, value: int, total: int) -> None:
         pb: ProgressBar = self.query_one("#flash-progressbar")
         lbl: Label = self.query_one("#flash-status-label")
-        self.app.call_from_thread(setattr, pb, "progress", value)
-        self.app.call_from_thread(setattr, pb, "total", total)
         pct = int(value * 100 / total) if total else 0
-        self.app.call_from_thread(setattr, lbl, "renderable", f"{pct}%")
+        self._ui(setattr, pb, "progress", value)
+        self._ui(setattr, pb, "total", total)
+        self._ui(setattr, lbl, "renderable", f"{pct}%")
 
     def _update_progress_bytes(self, downloaded: int, total: int) -> None:
         pct = int(downloaded * 100 / total) if total else 0
         pb: ProgressBar = self.query_one("#flash-progressbar")
         lbl: Label = self.query_one("#flash-status-label")
-        self.app.call_from_thread(setattr, pb, "progress", pct)
         kb_done = downloaded // 1024
         kb_total = total // 1024
-        self.app.call_from_thread(
-            setattr, lbl, "renderable", f"Letöltés: {kb_done} kB / {kb_total} kB"
-        )
+        self._ui(setattr, pb, "progress", pct)
+        self._ui(setattr, lbl, "renderable", f"Letöltés: {kb_done} kB / {kb_total} kB")
 
     def _set_busy(self, busy: bool) -> None:
         self.flash_busy = busy
         for btn_id in ("#flash-download-btn", "#flash-flash-btn"):
             btn: Button = self.query_one(btn_id)
-            self.app.call_from_thread(setattr, btn, "disabled", busy)
+            self._ui(setattr, btn, "disabled", busy)
