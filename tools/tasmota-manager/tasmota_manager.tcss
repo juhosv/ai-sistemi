@@ -165,7 +165,27 @@ TabbedContent ContentSwitcher {
     height: 3;
     layout: horizontal;
     align: left middle;
+    margin: 0 0 0 0;
+}
+
+#config-fetch-row {
+    height: 3;
+    layout: horizontal;
+    align: left middle;
     margin: 0 0 1 0;
+}
+
+#cfg-fetch-hint {
+    width: 1fr;
+    height: 1;
+    color: $text-disabled;
+    content-align: left middle;
+}
+
+#cfg-fetch-status {
+    height: 1;
+    width: auto;
+    content-align: left middle;
 }
 
 #config-top-panels {

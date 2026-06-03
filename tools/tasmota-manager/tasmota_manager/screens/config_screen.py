@@ -212,10 +212,18 @@ class ConfigTab(TabPane):
                 yield Button("📂 Betöltés", id="cfg-load-btn", variant="default")
                 yield Button("💾 Mentés", id="cfg-save-btn", variant="primary")
                 yield Input(placeholder="Profil neve", id="cfg-profile-name-input", value="uj_profil")
+
+            # --- Device fetch row ---------------------------------------
+            with Horizontal(id="config-fetch-row"):
                 yield Button(
-                    "📥 Letöltés eszközről",
+                    "📥 Letöltés eszközről  (Status 1 / 5 / 6 / 2)",
                     id="cfg-fetch-btn",
                     variant="warning",
+                )
+                yield Label(
+                    "  Soros portkapcsolat szükséges (Serial tab → Csatlakozás)",
+                    id="cfg-fetch-hint",
+                    classes="hint",
                 )
                 yield Label("", id="cfg-fetch-status")
 
