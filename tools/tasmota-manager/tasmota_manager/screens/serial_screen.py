@@ -1,6 +1,7 @@
 """Serial Monitor tab – real-time serial port monitor."""
 from __future__ import annotations
 
+import json
 import re
 from datetime import datetime
 from typing import Optional
@@ -8,11 +9,21 @@ from typing import Optional
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.reactive import reactive
-from textual.widgets import Button, Input, Label, RichLog, Select, TabPane
+from textual.widgets import Button, Input, Label, RichLog, Select, Static, TabPane
 
-from tasmota_manager.utils import list_serial_ports
+from tasmota_manager.utils import list_serial_ports, rssi_to_bars, rssi_label
 
 BAUD_RATES = [9600, 19200, 38400, 57600, 74880, 115200, 230400, 460800, 921600]
+
+# Gyors parancsok: (gomb szöveg, Tasmota parancs, tooltip)
+QUICK_COMMANDS = [
+    ("WiFi info",    "Status 5",  "IP, MAC, SSID, RSSI"),
+    ("GPIO állapot", "Status 11", "GPIO kiosztás és állapot"),
+    ("Eszköz info",  "Status",    "Általános státusz"),
+    ("Sensor",       "Status 10", "Szenzor értékek"),
+    ("Uptime",       "Uptime",    "Üzemidő"),
+    ("Restart",      "Restart 1", "Újraindítás"),
+]
 
 # Tasmota log prefix → Rich color
 _PREFIX_COLORS: dict[str, str] = {
@@ -31,6 +42,14 @@ _PREFIX_COLORS: dict[str, str] = {
 }
 
 _PREFIX_RE = re.compile(r"^([A-Z]{2,4}):")
+
+# WiFi status parser: "WIF: Connected to AP..." or Status 5 JSON
+_STATUS5_RE = re.compile(
+    r'"StatusNET"\s*:\s*(\{[^}]+\})', re.DOTALL
+)
+_WIFI_RSSI_RE = re.compile(r'"RSSI"\s*:\s*(-?\d+)')
+_WIFI_SSID_RE = re.compile(r'"SSId"\s*:\s*"([^"]+)"')
+_WIFI_IP_RE   = re.compile(r'"IPAddress"\s*:\s*"([^"]+)"')
 
 
 def _colorize_line(line: str) -> str:
@@ -52,6 +71,10 @@ class SerialTab(TabPane):
 
     DEFAULT_CSS = ""
     connected: reactive[bool] = reactive(False)
+
+    # Accumulated partial buffer for multi-line Status 5 parsing
+    _status5_buf: str = ""
+    _collecting_status5: bool = False
 
     def compose(self) -> ComposeResult:
         with Vertical(id="serial-tab"):
@@ -75,6 +98,17 @@ class SerialTab(TabPane):
                 yield Button("Törlés", id="serial-clear-btn", variant="default")
                 yield Label("", id="serial-status-label")
 
+            # --- WiFi status bar ----------------------------------------
+            with Horizontal(id="serial-wifi-bar"):
+                yield Static("WiFi:", classes="label")
+                yield Label("–", id="serial-wifi-status")
+
+            # --- Quick commands -----------------------------------------
+            with Horizontal(id="serial-quick-cmds"):
+                yield Static("Gyors:", classes="label")
+                for label, cmd, _ in QUICK_COMMANDS:
+                    yield Button(label, id=f"qcmd_{cmd.replace(' ', '_')}", variant="default")
+
             # --- Output log ---------------------------------------------
             yield RichLog(
                 id="serial-output",
@@ -87,7 +121,7 @@ class SerialTab(TabPane):
             with Horizontal(id="serial-input-row"):
                 yield Label(">", classes="label")
                 yield Input(
-                    placeholder="Tasmota parancs (pl. Status, TelePeriod 60)",
+                    placeholder="Tasmota parancs (pl. Status 5, TelePeriod 60, Restart 1)",
                     id="serial-cmd-input",
                 )
                 yield Button("↵ Küldés", id="serial-send-btn", variant="primary")
@@ -105,7 +139,7 @@ class SerialTab(TabPane):
     # ------------------------------------------------------------------
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        btn_id = event.button.id
+        btn_id = event.button.id or ""
         if btn_id == "serial-connect-btn":
             self._toggle_connection()
         elif btn_id == "serial-refresh-ports":
@@ -115,6 +149,13 @@ class SerialTab(TabPane):
         elif btn_id == "serial-clear-btn":
             log: RichLog = self.query_one("#serial-output")
             log.clear()
+        elif btn_id.startswith("qcmd_"):
+            # Find matching quick command
+            cmd_key = btn_id[5:].replace("_", " ")
+            for _, cmd, _ in QUICK_COMMANDS:
+                if cmd == cmd_key:
+                    self._send_direct(cmd)
+                    break
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         if event.input.id == "serial-cmd-input":
@@ -136,6 +177,7 @@ class SerialTab(TabPane):
             btn.variant = "success"
             lbl.update("Lecsatlakozva")
             self._log_line("[dim]── Kapcsolat bontva ──[/dim]")
+            self._set_wifi_status(None, None, None, None)
         else:
             port = self._selected_port()
             baud = self._selected_baud()
@@ -157,6 +199,10 @@ class SerialTab(TabPane):
         cmd = inp.value.strip()
         if not cmd:
             return
+        self._send_direct(cmd)
+        inp.value = ""
+
+    def _send_direct(self, cmd: str) -> None:
         serial_bridge = self.app.serial_bridge  # type: ignore[attr-defined]
         if not serial_bridge.is_connected:
             self._log_line("[red]Nincs soros port kapcsolat![/red]")
@@ -165,7 +211,6 @@ class SerialTab(TabPane):
             serial_bridge.send(cmd)
             ts = datetime.now().strftime("%H:%M:%S.%f")[:12]
             self._log_line(f"[dim]{ts}[/dim]  [yellow]> {cmd}[/yellow]")
-            inp.value = ""
         except Exception as exc:
             self._log_line(f"[red]Küldési hiba: {exc}[/red]")
 
@@ -174,24 +219,135 @@ class SerialTab(TabPane):
     # ------------------------------------------------------------------
 
     async def _serial_reader(self) -> None:
+        import asyncio
         serial_bridge = self.app.serial_bridge  # type: ignore[attr-defined]
         while True:
             try:
                 line = await serial_bridge.queue.get()
             except Exception:
-                import asyncio
                 await asyncio.sleep(0.1)
                 continue
+
             ts = datetime.now().strftime("%H:%M:%S.%f")[:12]
             colored = _colorize_line(line)
             self._log_line(f"[dim]{ts}[/dim]  {colored}")
-            # Notify board screen if possible
+
+            # Parse WiFi info from live output and Status 5 response
+            self._parse_wifi_from_line(line)
+
+    # ------------------------------------------------------------------
+    # WiFi status parsing
+    # ------------------------------------------------------------------
+
+    def _parse_wifi_from_line(self, line: str) -> None:
+        """
+        Extract WiFi info from Tasmota serial output.
+        Sources:
+        - WIF: lines (live connection events)
+        - Status 5 JSON response (StatusNET block)
+        - tele STATE-like lines with Wifi key
+        """
+        # --- Live WIF: log lines ---
+        # "WIF: Connected to AP 1 HomeNetwork bssid AA:BB... in 1234 ms, IP 192.168.1.42"
+        if line.startswith("WIF:"):
+            rest = line[4:].strip()
+            if "Connected" in rest:
+                ip_m = re.search(r"IP (\d+\.\d+\.\d+\.\d+)", rest)
+                ssid_m = re.search(r"AP \d+ (\S+)", rest)
+                ip = ip_m.group(1) if ip_m else None
+                ssid = ssid_m.group(1) if ssid_m else None
+                # No RSSI from this line – trigger a Status 5 to get it
+                self._set_wifi_status(ssid, ip, None, "Csatlakozva")
+                # Auto-fetch full WiFi details
+                self._send_direct("Status 5")
+            elif "Disconnect" in rest or "Fail" in rest:
+                self._set_wifi_status(None, None, None, "Nincs kapcsolat")
+            return
+
+        # --- Status 5 JSON response ---
+        # Accumulate lines until we see "StatusNET" block
+        if "StatusNET" in line or self._collecting_status5:
+            self._collecting_status5 = True
+            self._status5_buf += line + "\n"
+            if "}" in line:
+                self._try_parse_status5(self._status5_buf)
+                self._collecting_status5 = False
+                self._status5_buf = ""
+            return
+
+        # --- Inline JSON with Wifi key (tele STATE) ---
+        if '"Wifi"' in line:
             try:
-                self.app.post_message_no_wait(  # type: ignore[attr-defined]
-                    SerialLineReceived(line)
-                )
+                # Extract JSON portion
+                start = line.find("{")
+                if start >= 0:
+                    data = json.loads(line[start:])
+                    wifi = data.get("Wifi", {})
+                    if wifi:
+                        rssi = wifi.get("Signal") or wifi.get("RSSI")
+                        ssid = wifi.get("SSId", "")
+                        ip = wifi.get("IPAddress", "")
+                        self._set_wifi_status(ssid, ip, rssi, "Csatlakozva")
             except Exception:
                 pass
+
+    def _try_parse_status5(self, buf: str) -> None:
+        """Parse accumulated Status 5 / StatusNET JSON block."""
+        try:
+            # Find the JSON object
+            start = buf.find("{")
+            if start < 0:
+                return
+            # Find matching closing brace
+            depth = 0
+            end = -1
+            for i, ch in enumerate(buf[start:], start):
+                if ch == "{":
+                    depth += 1
+                elif ch == "}":
+                    depth -= 1
+                    if depth == 0:
+                        end = i + 1
+                        break
+            if end < 0:
+                return
+
+            data = json.loads(buf[start:end])
+            net = data.get("StatusNET", data)
+            rssi = net.get("RSSI") or net.get("Signal")
+            ssid = net.get("SSId", "")
+            ip   = net.get("IPAddress", "")
+            self._set_wifi_status(ssid, ip, rssi, "Csatlakozva" if ip else None)
+        except Exception:
+            pass
+
+    def _set_wifi_status(
+        self,
+        ssid: Optional[str],
+        ip: Optional[str],
+        rssi: Optional[int],
+        state: Optional[str],
+    ) -> None:
+        lbl: Label = self.query_one("#serial-wifi-status")
+        if state is None or state == "Nincs kapcsolat":
+            lbl.update("[red]● Nincs WiFi kapcsolat[/red]")
+            return
+
+        parts: list[str] = []
+        if state:
+            parts.append(f"[green]● {state}[/green]")
+        if ssid:
+            parts.append(f"SSID: [bold]{ssid}[/bold]")
+        if ip:
+            parts.append(f"IP: [cyan]{ip}[/cyan]")
+        if rssi is not None:
+            bars = rssi_to_bars(int(rssi))
+            quality = rssi_label(int(rssi))
+            color = "green" if int(rssi) > -70 else "yellow" if int(rssi) > -80 else "red"
+            parts.append(
+                f"Jelerősség: [{color}]{bars}[/{color}] {rssi} dBm ({quality})"
+            )
+        lbl.update("   ".join(parts) if parts else "–")
 
     # ------------------------------------------------------------------
     # Helpers

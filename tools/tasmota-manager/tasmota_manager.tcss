@@ -115,6 +115,27 @@ TabbedContent ContentSwitcher {
     margin: 0 0 1 0;
 }
 
+#serial-wifi-bar {
+    height: 1;
+    layout: horizontal;
+    align: left middle;
+    margin: 0 0 0 0;
+    padding: 0 1;
+    background: $primary-darken-3;
+}
+
+#serial-wifi-status {
+    height: 1;
+    width: 1fr;
+}
+
+#serial-quick-cmds {
+    height: 3;
+    layout: horizontal;
+    align: left middle;
+    margin: 0 0 1 0;
+}
+
 #serial-output {
     height: 1fr;
     border: solid $primary-darken-2;
