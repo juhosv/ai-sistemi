@@ -345,6 +345,7 @@ class ConfigTab(TabPane):
     DEFAULT_CSS = ""
     _gpio_assignments: dict[int, str]   # gpio_num → type_id
     _selected_gpio: Optional[int]       # currently selected pin in the diagram
+    _diagram_build_version: int         # version counter for deduplicating rebuilds
 
     def compose(self) -> ComposeResult:
         with ScrollableContainer(id="config-tab"):
@@ -502,10 +503,11 @@ class ConfigTab(TabPane):
     def on_mount(self) -> None:
         self._gpio_assignments = {}
         self._selected_gpio = None
+        self._diagram_build_version = 0
         table: DataTable = self.query_one("#config-preview-table")
         table.add_columns("Parancs", "Érték")
         self._refresh_profiles()
-        self.call_after_refresh(self._rebuild_board_diagram)
+        self._rebuild_board_diagram()
 
     # ------------------------------------------------------------------
     # Button handlers
@@ -565,28 +567,41 @@ class ConfigTab(TabPane):
         return None
 
     def _rebuild_board_diagram(self) -> None:
-        """Remove and re-mount the InteractiveBoardDiagram for the selected board."""
+        """Re-mount the InteractiveBoardDiagram for the selected board.
+
+        Uses a version counter so that if this is called multiple times in the
+        same frame (e.g. once from on_mount and once from on_select_changed for
+        the initial Select value), only the *last* scheduled build actually runs.
+        """
+        self._diagram_build_version += 1
+        version = self._diagram_build_version
         board = self._get_current_board()
         if not board:
             return
-        try:
-            container = self.query_one("#gpio-diagram-container")
-        except Exception:
-            return
-        container.remove_children()
-        diag = InteractiveBoardDiagram(
-            board, self._gpio_assignments, id="gpio-interactive-board"
-        )
-        container.mount(diag)
-        # If the selected pin doesn't exist on the new board, hide the config panel
-        if self._selected_gpio is not None and not board.pin_by_gpio(self._selected_gpio):
-            self._selected_gpio = None
+
+        def _do_build() -> None:
+            # Bail out if a newer build has been scheduled since we were queued.
+            if self._diagram_build_version != version:
+                return
             try:
-                self.query_one("#gpio-pin-form").add_class("hidden")
-                self.query_one("#gpio-config-placeholder").remove_class("hidden")
+                container = self.query_one("#gpio-diagram-container")
             except Exception:
-                pass
-        self._update_preview()
+                return
+            container.remove_children()
+            # No id= to avoid duplicate-ID errors if two builds race.
+            diag = InteractiveBoardDiagram(board, self._gpio_assignments)
+            container.mount(diag)
+            # Hide config panel if selected pin doesn't exist on this board.
+            if self._selected_gpio is not None and not board.pin_by_gpio(self._selected_gpio):
+                self._selected_gpio = None
+                try:
+                    self.query_one("#gpio-pin-form").add_class("hidden")
+                    self.query_one("#gpio-config-placeholder").remove_class("hidden")
+                except Exception:
+                    pass
+            self._update_preview()
+
+        self.call_after_refresh(_do_build)
 
     def _show_pin_config(self, gpio_num: int) -> None:
         """Highlight the clicked pin and populate the right-side config panel."""
