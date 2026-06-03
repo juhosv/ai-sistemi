@@ -103,6 +103,28 @@ def parse_status6(lines: list[str]) -> dict:
     return result
 
 
+def parse_ssids(lines: list[str]) -> dict:
+    """
+    Parse Ssid1 / Ssid2 console command responses.
+
+    Tasmota returns individual JSON lines when you send 'Ssid1' / 'Ssid2':
+        {"Ssid1":"HomeNetwork"}
+        {"Ssid2":"BackupNet"}
+
+    Also handles the case where Status 5 is the only WiFi source (active SSID).
+    """
+    result: dict = {}
+    for line in lines:
+        data = _extract_json_block(line)
+        if not data:
+            continue
+        if "Ssid1" in data and data["Ssid1"]:
+            result["ssid1"] = data["Ssid1"]
+        if "Ssid2" in data:
+            result["ssid2"] = data["Ssid2"]  # may be empty string = not set
+    return result
+
+
 def parse_status2(lines: list[str]) -> Optional[str]:
     """Parse Status 2 (StatusFWR) – return chip family string or None."""
     for line in lines:
@@ -574,11 +596,15 @@ class ConfigTab(TabPane):
             # Clear buffer so we only parse fresh responses
             serial_bridge.clear_buffer()
 
-            # Send all status queries
+            # Send all status and config queries
             serial_bridge.send("Status 1")   # topic, module, full_topic
             await asyncio.sleep(0.4)
-            serial_bridge.send("Status 5")   # WiFi SSID, IP (no password)
+            serial_bridge.send("Status 5")   # active WiFi SSID, IP (no password)
             await asyncio.sleep(0.4)
+            serial_bridge.send("Ssid1")      # configured SSID1 (regardless of active conn.)
+            await asyncio.sleep(0.3)
+            serial_bridge.send("Ssid2")      # configured SSID2 (backup network)
+            await asyncio.sleep(0.3)
             serial_bridge.send("Status 6")   # MQTT host, port, user (no password)
             await asyncio.sleep(0.4)
             serial_bridge.send("Status 2")   # Firmware / chip hardware
@@ -605,12 +631,22 @@ class ConfigTab(TabPane):
                     pass
                 filled.append("Modul")
 
-            # --- Parse Status 5 (network) ------------------------------
-            s5 = parse_status5(lines)
-            if s5.get("ssid1"):
-                self._set_input("#cfg-ssid1", s5["ssid1"])
-                filled.append("WiFi SSID")
-            skipped.append("WiFi jelszó")   # never returned
+            # --- Parse Ssid1 / Ssid2 (configured networks) -------------
+            ssids = parse_ssids(lines)
+            # Ssid1/Ssid2 responses take priority over Status 5 (active only)
+            if ssids.get("ssid1"):
+                self._set_input("#cfg-ssid1", ssids["ssid1"])
+                filled.append("WiFi SSID1")
+            elif parse_status5(lines).get("ssid1"):
+                # Fallback: active SSID from Status 5
+                self._set_input("#cfg-ssid1", parse_status5(lines)["ssid1"])
+                filled.append("WiFi SSID1 (aktív)")
+            if "ssid2" in ssids:
+                self._set_input("#cfg-ssid2", ssids["ssid2"])
+                if ssids["ssid2"]:
+                    filled.append("WiFi SSID2")
+                # empty string is fine – means no backup network configured
+            skipped.append("WiFi jelszavak")   # never returned by Tasmota
 
             # --- Parse Status 6 (MQTT) ---------------------------------
             s6 = parse_status6(lines)
