@@ -150,34 +150,70 @@ def parse_status2(lines: list[str]) -> Optional[str]:
 
 def parse_wifi_scan(lines: list[str]) -> list[dict]:
     """
-    Parse Tasmota WifiScan responses.
+    Parse Tasmota WiFiScan command responses.
 
-    Each discovered network arrives as a separate JSON line:
-        {"WifiScan":{"AP":1,"SSId":"HomeNetwork","RSSI":-65,"Enc":4}}
-    The scan ends with:
-        {"WifiScan":"Done"}
+    Tasmota WifiScan protocol (two-step):
+      1. Send "WifiScan 1"  → starts async scan, returns {"WifiScan":"Scanning"}
+      2. Wait ~3 s, then "WifiScan" → returns cached results
 
-    Returns list of dicts: [{"ssid": ..., "rssi": ..., "enc": ...}, ...]
+    Combined result format (single JSON, all networks):
+        {"WiFiScan":{"NET1":{"SSId":"HomeNet","BSSId":"AA:BB:...",
+                             "Channel":"6","Signal":"-31","RSSI":"100",
+                             "Encryption":"WPA2/PSK"},
+                     "NET2":{...}}}
+
+    The same networks also appear individually via MQTT (one per RESULT line):
+        MQT: stat/.../RESULT = {"WiFiScan":{"NET1":{...}}}
+        MQT: stat/.../RESULT = {"WiFiScan":{"NET2":{...}}}
+
+    Note: key is "WiFiScan" (capital F) in responses; command is "WifiScan".
+    Both spellings are handled. Signal/RSSI values come as strings.
+
+    Returns list of dicts: [{"ssid":..., "rssi":...(dBm), "enc":...}, ...]
     sorted by signal strength (strongest first), duplicates removed.
     """
-    ENC_LABEL = {0: "Nyílt", 1: "WEP", 2: "WPA", 3: "WPA2", 4: "WPA2", 5: "WPA3"}
     seen: dict[str, dict] = {}
+
     for line in lines:
-        if "WifiScan" not in line:
+        if "WiFiScan" not in line and "WifiScan" not in line:
             continue
         data = _extract_json_block(line)
         if not data:
             continue
-        entry = data.get("WifiScan", {})
-        if not isinstance(entry, dict):
-            continue
-        ssid = entry.get("SSId", "")
-        rssi = entry.get("RSSI", -100)
-        enc  = ENC_LABEL.get(entry.get("Enc", 3), "WPA2")
-        if ssid:
-            # Keep strongest signal if duplicate SSID
+
+        # Handle both capitalisation variants
+        scan_val = data.get("WiFiScan") or data.get("WifiScan")
+        if not isinstance(scan_val, dict):
+            continue  # skip "Scanning", "Not Started", "Busy" strings
+
+        # scan_val may be the whole dict of networks OR a single-network dict
+        # Detect: if keys are NET1/NET2/... it's the combined result
+        if any(k.startswith("NET") for k in scan_val):
+            networks_iter = scan_val.values()
+        else:
+            # Single network dict (e.g. individual MQTT RESULT line)
+            networks_iter = [scan_val]
+
+        for net in networks_iter:
+            if not isinstance(net, dict):
+                continue
+            ssid = net.get("SSId", "")
+            if not ssid:
+                continue
+            # Signal = dBm (string, e.g. "-31"), RSSI = percentage string
+            try:
+                rssi = int(net.get("Signal", "0"))
+            except ValueError:
+                # Fallback: convert RSSI percentage to dBm
+                try:
+                    rssi = int(net.get("RSSI", "0")) // 2 - 100
+                except ValueError:
+                    rssi = -100
+            enc = net.get("Encryption", "?")
+            # Keep strongest signal for duplicate SSIDs
             if ssid not in seen or rssi > seen[ssid]["rssi"]:
                 seen[ssid] = {"ssid": ssid, "rssi": rssi, "enc": enc}
+
     return sorted(seen.values(), key=lambda x: x["rssi"], reverse=True)
 
 
@@ -764,7 +800,16 @@ class ConfigTab(TabPane):
     # ------------------------------------------------------------------
 
     async def _do_wifi_scan(self) -> None:
-        """Send WifiScan to connected device and populate the scan results Select."""
+        """
+        Trigger a Tasmota WiFi scan and populate the scan results Select.
+
+        Protocol (two-step):
+          1. WifiScan 1  → starts async scan on device, returns {"WifiScan":"Scanning"}
+          2. Wait ~4 s for the device to finish scanning
+          3. WifiScan    → fetch cached results, returns {"WiFiScan":{"NET1":{...},...}}
+
+        MQTT lines with individual NET results are also captured from the buffer.
+        """
         serial_bridge = self.app.serial_bridge  # type: ignore[attr-defined]
         status_lbl: Label = self.query_one("#wifi-scan-status")
         scan_btn: Button = self.query_one("#wifi-scan-btn")
@@ -777,23 +822,30 @@ class ConfigTab(TabPane):
             return
 
         scan_btn.disabled = True
-        status_lbl.update("[yellow]Szkennelés…[/yellow]")
+        results_panel = self.query_one("#wifi-scan-results")
+        results_panel.add_class("hidden")
 
         try:
+            # Step 1 – start the scan
             serial_bridge.clear_buffer()
+            serial_bridge.send("WifiScan 1")
+            status_lbl.update("[yellow]Szkennelés indítva… (4 s)[/yellow]")
+
+            # Wait for the ESP to scan all channels (~2-4 s depending on chip)
+            await asyncio.sleep(4.0)
+
+            # Step 2 – request cached results
             serial_bridge.send("WifiScan")
-            # ESP8266 scan ~3-4 s, ESP32 can be faster
-            await asyncio.sleep(5.0)
+            status_lbl.update("[yellow]Eredmények lekérése…[/yellow]")
+            await asyncio.sleep(1.5)
 
             lines = list(serial_bridge.line_buffer)
             networks = parse_wifi_scan(lines)
 
             scan_sel: Select = self.query_one("#wifi-scan-select")
-            results_panel = self.query_one("#wifi-scan-results")
 
             if not networks:
-                status_lbl.update("[red]Nem találtam hálózatot[/red]")
-                results_panel.add_class("hidden")
+                status_lbl.update("[red]Nem találtam hálózatot (próbáld újra)[/red]")
             else:
                 options = [
                     (f"{n['ssid']}  ({n['rssi']} dBm, {n['enc']})", n["ssid"])
