@@ -231,8 +231,55 @@ ALL_BOARDS: list[BoardLayout] = [D1_MINI, NODEMCU, ESP32_DEVKIT, ESP32_S3]
 BOARD_BY_NAME: dict[str, BoardLayout] = {b.name: b for b in ALL_BOARDS}
 
 CHIP_DEFAULT_BOARD: dict[str, str] = {
-    "ESP8266": "Wemos D1 Mini",
-    "ESP32":   "ESP32 DevKit V1",
+    "ESP8266":  "Wemos D1 Mini",
+    "ESP32":    "ESP32 DevKit V1",
     "ESP32-S3": "ESP32-S3 DevKit",
     "ESP32-C3": "ESP32 DevKit V1",
 }
+
+# ---------------------------------------------------------------------------
+# Tasmota Module ID mapping
+# ---------------------------------------------------------------------------
+# Maps board/device name → Tasmota "Module N" command value.
+# For ESP32 boards Tasmota uses Module 0 (ESP32 Generic).
+# For ESP8266 boards Module 18 = Generic.
+# Sonoff-branded devices have dedicated module IDs.
+BOARD_TO_TASMOTA_MODULE: dict[str, int] = {
+    "Wemos D1 Mini":         18,   # Generic ESP8266
+    "NodeMCU v3 (ESP8266)":  18,   # Generic ESP8266
+    "ESP32 DevKit V1":        0,   # Generic ESP32
+    "ESP32-S3 DevKit":        0,   # Generic ESP32-S3
+    "Sonoff Basic":           1,
+    "Sonoff S20":             8,
+    "Sonoff TH":              4,
+    "Sonoff Dual":            5,
+    "Sonoff 4CH":             7,
+    "Sonoff Mini":           38,
+}
+
+# Reverse: Tasmota module ID → default board name to show in Board tab.
+# When multiple boards share the same module ID, pick the most common one.
+TASMOTA_MODULE_TO_BOARD: dict[int, str] = {
+    18: "Wemos D1 Mini",
+     0: "ESP32 DevKit V1",
+     1: "Sonoff Basic",
+     8: "Sonoff S20",
+     4: "Sonoff TH",
+     5: "Sonoff Dual",
+     7: "Sonoff 4CH",
+    38: "Sonoff Mini",
+}
+
+# All selectable device/board names for the Config "Modul" and Board selects.
+# Boards with a visual diagram come first, then Sonoff device-only entries.
+MODULE_SELECT_OPTIONS: list[tuple[str, str]] = (
+    [(b.name, b.name) for b in ALL_BOARDS]
+    + [
+        ("Sonoff Basic (M1)",    "Sonoff Basic"),
+        ("Sonoff S20 (M8)",      "Sonoff S20"),
+        ("Sonoff TH (M4)",       "Sonoff TH"),
+        ("Sonoff Dual (M5)",     "Sonoff Dual"),
+        ("Sonoff 4CH (M7)",      "Sonoff 4CH"),
+        ("Sonoff Mini (M38)",    "Sonoff Mini"),
+    ]
+)

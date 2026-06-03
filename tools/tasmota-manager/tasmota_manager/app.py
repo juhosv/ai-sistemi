@@ -4,8 +4,9 @@ from __future__ import annotations
 from pathlib import Path
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.widgets import Footer, Header, TabbedContent, TabPane
+from textual.widgets import Footer, Header, Select, TabbedContent, TabPane
 
+from tasmota_manager.board_layouts import BOARD_BY_NAME
 from tasmota_manager.mqtt_client import MQTTManager
 from tasmota_manager.serial_comm import AsyncSerialBridge
 from tasmota_manager.screens.flash_screen import FlashTab
@@ -77,3 +78,35 @@ class TasmoApp(App):
     def on_mount(self) -> None:
         self.title = "SmartBlue Tasmota Manager"
         self.sub_title = "ESP32 / ESP8266 eszközkezelő"
+
+    # ------------------------------------------------------------------
+    # Cross-tab sync: Config "Modul/Board" ↔ Board "Board" select
+    # ------------------------------------------------------------------
+
+    def on_select_changed(self, event: Select.Changed) -> None:
+        """Keep Config #cfg-module and Board #board-type-select in sync."""
+        sel_id = event.select.id
+        value = event.value
+        if value is Select.BLANK:
+            return
+
+        board_name = str(value)
+
+        if sel_id == "cfg-module":
+            # Config changed → update Board (only if it's a known board layout)
+            if board_name in BOARD_BY_NAME:
+                try:
+                    board_sel: Select = self.query_one("#board-type-select")
+                    if board_sel.value != board_name:
+                        board_sel.value = board_name
+                except Exception:
+                    pass
+
+        elif sel_id == "board-type-select":
+            # Board changed → update Config
+            try:
+                cfg_sel: Select = self.query_one("#cfg-module")
+                if cfg_sel.value != board_name:
+                    cfg_sel.value = board_name
+            except Exception:
+                pass

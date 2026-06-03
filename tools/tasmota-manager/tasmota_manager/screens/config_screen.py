@@ -148,6 +148,7 @@ def parse_status2(lines: list[str]) -> Optional[str]:
             return "ESP32"
     return None
 
+from tasmota_manager.board_layouts import MODULE_SELECT_OPTIONS, D1_MINI
 from tasmota_manager.config_builder import (
     GPIO_FUNCTION_TYPES,
     GPIO_TYPE_BY_ID,
@@ -298,15 +299,10 @@ class ConfigTab(TabPane):
                         yield Label("TelePeriod:", classes="label")
                         yield Input(value="300", id="cfg-teleperiod")
                     with Horizontal(classes="row"):
-                        yield Label("Modul:", classes="label")
+                        yield Label("Modul / Board:", classes="label")
                         yield Select(
-                            options=[
-                                ("Generic (18)", 18),
-                                ("Sonoff Basic (1)", 1),
-                                ("Sonoff S20 (8)", 8),
-                                ("WeMos D1 Mini (18)", 18),
-                            ],
-                            value=18,
+                            options=MODULE_SELECT_OPTIONS,
+                            value=D1_MINI.name,
                             id="cfg-module",
                             allow_blank=False,
                         )
@@ -480,6 +476,14 @@ class ConfigTab(TabPane):
 
         assignments = self._get_gpio_assignments()
 
+        board_name = D1_MINI.name
+        try:
+            mod_sel: Select = self.query_one("#cfg-module")
+            if mod_sel.value is not Select.BLANK:
+                board_name = str(mod_sel.value)
+        except Exception:
+            pass
+
         return DeviceConfig(
             device_name=_val("#cfg-topic"),
             topic=_val("#cfg-mqtt-topic") or _val("#cfg-topic"),
@@ -498,6 +502,7 @@ class ConfigTab(TabPane):
                 full_topic=_val("#cfg-mqtt-fulltopic") or "%prefix%/%topic%/",
             ),
             tele_period=int(_val("#cfg-teleperiod") or "300"),
+            module_type=board_name,
             gpio={str(k): v for k, v in assignments.items()},
         )
 
@@ -558,6 +563,13 @@ class ConfigTab(TabPane):
         _set("#cfg-mqtt-fulltopic", cfg.mqtt.full_topic)
         _set("#cfg-topic", cfg.topic)
         _set("#cfg-teleperiod", str(cfg.tele_period))
+
+        # Board / Module select
+        try:
+            mod_sel: Select = self.query_one("#cfg-module")
+            mod_sel.value = cfg.module_type if cfg.module_type else D1_MINI.name
+        except Exception:
+            pass
 
         # Reload GPIO rows
         container: Vertical = self.query_one("#gpio-rows-container")
@@ -625,11 +637,15 @@ class ConfigTab(TabPane):
                 filled.append("FullTopic")
             if s1.get("module_type"):
                 try:
-                    sel: Select = self.query_one("#cfg-module")
-                    sel.value = int(s1["module_type"])
+                    from tasmota_manager.board_layouts import TASMOTA_MODULE_TO_BOARD
+                    mod_id = int(s1["module_type"])
+                    board_name = TASMOTA_MODULE_TO_BOARD.get(mod_id)
+                    if board_name:
+                        sel: Select = self.query_one("#cfg-module")
+                        sel.value = board_name
+                        filled.append(f"Modul → {board_name}")
                 except Exception:
                     pass
-                filled.append("Modul")
 
             # --- Parse Ssid1 / Ssid2 (configured networks) -------------
             ssids = parse_ssids(lines)

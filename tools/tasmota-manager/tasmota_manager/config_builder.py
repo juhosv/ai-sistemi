@@ -4,9 +4,9 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 # ---------------------------------------------------------------------------
@@ -233,9 +233,20 @@ class DeviceConfig(BaseModel):
     wifi: WifiConfig = Field(default_factory=WifiConfig)
     mqtt: MqttConfig = Field(default_factory=MqttConfig)
     tele_period: int = 300
-    module_type: int = 18
+    # Board/module name (e.g. "Wemos D1 Mini"). Legacy profiles may contain an
+    # int Tasmota module ID – the validator converts that to a board name.
+    module_type: str = "Wemos D1 Mini"
     # gpio: {gpio_number_str: type_id}  e.g. {"4": "switch", "14": "relay"}
     gpio: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator("module_type", mode="before")
+    @classmethod
+    def _coerce_module_type(cls, v: Union[int, str]) -> str:
+        """Convert legacy int module IDs to board name strings."""
+        if isinstance(v, int):
+            from tasmota_manager.board_layouts import TASMOTA_MODULE_TO_BOARD
+            return TASMOTA_MODULE_TO_BOARD.get(v, "Wemos D1 Mini")
+        return str(v) if v else "Wemos D1 Mini"
 
     def gpio_int_keys(self) -> dict[int, str]:
         return {int(k): v for k, v in self.gpio.items()}
@@ -269,6 +280,9 @@ class DeviceConfig(BaseModel):
         cmds.append(("FullTopic", self.mqtt.full_topic))
 
         # General
+        from tasmota_manager.board_layouts import BOARD_TO_TASMOTA_MODULE
+        tasmota_module = BOARD_TO_TASMOTA_MODULE.get(self.module_type, 18)
+        cmds.append(("Module", str(tasmota_module)))
         cmds.append(("TelePeriod", str(self.tele_period)))
 
         # GPIO

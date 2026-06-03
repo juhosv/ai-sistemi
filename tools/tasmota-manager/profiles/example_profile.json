@@ -16,7 +16,7 @@
     "full_topic": "%prefix%/%topic%/"
   },
   "tele_period": 300,
-  "module_type": 18,
+  "module_type": "Wemos D1 Mini",
   "gpio": {
     "4": "switch",
     "5": "switch",
