@@ -62,8 +62,10 @@ class FlashTab(TabPane):
                 yield Static("Firmware kiválasztása", classes="section-title")
                 with RadioSet(id="flash-firmware-radio"):
                     for v in FIRMWARE_VARIANTS:
+                        dl_name = v.factory_filename or v.filename
+                        badge = " [factory]" if v.factory_filename else ""
                         yield RadioButton(
-                            f"{v.filename:<28}  {v.chip:<10}  {v.description}",
+                            f"{dl_name:<36}  {v.chip:<10}  {v.description}{badge}",
                             id=f"fw_{v.filename.replace('.', '_').replace('-', '_')}",
                         )
                 with Horizontal(classes="btn-row"):
@@ -145,6 +147,15 @@ class FlashTab(TabPane):
         except Exception as exc:
             self._log(f"[red]Hiba a verzióinformáció letöltésekor: {exc}[/red]")
 
+    def _firmware_file_to_download(self, variant) -> str:
+        """
+        Return the filename that should actually be downloaded for this variant.
+
+        ESP32 family: use .factory.bin for physical esptool flashing.
+        ESP8266 / unknown: use the regular filename as-is.
+        """
+        return variant.factory_filename or variant.filename
+
     async def _do_download(self) -> None:
         if self.release_info is None:
             self._log("[yellow]Még nincs verzióinformáció – várj a betöltésre.[/yellow]")
@@ -154,12 +165,22 @@ class FlashTab(TabPane):
             self._log("[yellow]Válassz firmware-t![/yellow]")
             return
 
-        url = self.release_info.assets.get(variant.filename)
+        dl_filename = self._firmware_file_to_download(variant)
+        if dl_filename != variant.filename:
+            self._log(
+                f"[cyan]ℹ  ESP32 első flashelés: [bold]{dl_filename}[/bold] letöltése "
+                f"(factory binary = bootloader + partíciótábla + alkalmazás)[/cyan]"
+            )
+
+        url = self.release_info.assets.get(dl_filename)
         if url is None:
-            self._log(f"[red]{variant.filename} nem található az assets között.[/red]")
+            # Fallback: try the plain .bin URL (e.g. for OTA server)
+            url = self.release_info.assets.get(variant.filename)
+        if url is None:
+            self._log(f"[red]{dl_filename} nem található az assets között.[/red]")
             return
 
-        dest = CACHE_DIR / variant.filename
+        dest = CACHE_DIR / dl_filename
         self._set_busy(True)
         try:
             await asyncio.get_event_loop().run_in_executor(
@@ -186,14 +207,32 @@ class FlashTab(TabPane):
         if variant is None:
             self._log("[yellow]Válassz firmware-t![/yellow]")
             return
-        fw_path = CACHE_DIR / variant.filename
+
+        # Use factory binary for ESP32 family; regular binary for ESP8266
+        dl_filename = self._firmware_file_to_download(variant)
+        fw_path = CACHE_DIR / dl_filename
         if not fw_path.exists():
-            self._log("[yellow]Töltsd le először a firmware-t![/yellow]")
-            return
+            # Try the plain .bin as fallback
+            fw_path_fallback = CACHE_DIR / variant.filename
+            if fw_path_fallback.exists():
+                fw_path = fw_path_fallback
+                self._log(
+                    f"[yellow]⚠  Factory binary nem található, sima .bin-t használom: "
+                    f"{variant.filename}. "
+                    f"Első flashelésnél ez hibát okozhat (invalid header)![/yellow]"
+                )
+            else:
+                self._log(
+                    f"[yellow]Töltsd le először a firmware-t! "
+                    f"({dl_filename})[/yellow]"
+                )
+                return
 
         erase_cb: Checkbox = self.query_one("#flash-erase-cb")
         erase = erase_cb.value
         chip = variant.chip.lower().replace("-", "")
+        flash_offset = variant.flash_offset
+
         self._set_busy(True)
         self._update_progress(0, 100)
 
@@ -209,12 +248,13 @@ class FlashTab(TabPane):
                     firmware_path=fw_path,
                     chip=chip,
                     erase=erase,
+                    flash_offset=flash_offset,
                     log_cb=self._log,
                     progress_cb=_progress_adapter,
                 ),
             )
             self._update_progress(100, 100)
-            self._log("[green bold]Égetés sikeres! Az eszköz újraindul.[/green bold]")
+            self._log("[green bold]✅ Égetés sikeres! Az eszköz újraindul.[/green bold]")
         except Exception as exc:
             self._log(f"[red]Égetési hiba: {exc}[/red]")
         finally:

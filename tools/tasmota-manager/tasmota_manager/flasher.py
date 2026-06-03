@@ -22,15 +22,45 @@ class FirmwareVariant:
     filename: str
     chip: str
     description: str
+    # For ESP32 family: initial flash needs the .factory.bin (bootloader +
+    # partition table + app at 0x0). Regular .bin is app-only and would be
+    # placed at 0x10000 for OTA updates. We always use the factory variant
+    # for physical flashing to avoid the "invalid header" boot-loop.
+    factory_filename: str = ""   # empty → same as filename (ESP8266 / OTA)
+    flash_offset: str = "0x0"    # address passed to esptool write_flash
 
 
 FIRMWARE_VARIANTS: list[FirmwareVariant] = [
-    FirmwareVariant("tasmota.bin",        "ESP8266",  "Standard (ESP8266)"),
-    FirmwareVariant("tasmota-lite.bin",   "ESP8266",  "Lite – kisebb méret (ESP8266)"),
-    FirmwareVariant("tasmota-sensors.bin","ESP8266",  "Sensors build (ESP8266)"),
-    FirmwareVariant("tasmota32.bin",      "ESP32",    "Standard (ESP32)"),
-    FirmwareVariant("tasmota32s3.bin",    "ESP32-S3", "Standard (ESP32-S3)"),
-    FirmwareVariant("tasmota32c3.bin",    "ESP32-C3", "Standard (ESP32-C3)"),
+    # ESP8266 – single .bin, always flashed at 0x0
+    FirmwareVariant("tasmota.bin",         "ESP8266",  "Standard (ESP8266)"),
+    FirmwareVariant("tasmota-lite.bin",    "ESP8266",  "Lite – kisebb méret (ESP8266)"),
+    FirmwareVariant("tasmota-sensors.bin", "ESP8266",  "Sensors build (ESP8266)"),
+    # ESP32 family – initial flash uses .factory.bin (bootloader+pt+app at 0x0)
+    # Regular .bin is only for OTA; physical esptool flash always needs factory.
+    FirmwareVariant(
+        "tasmota32.bin",      "ESP32",
+        "Standard (ESP32 / WROOM-32 / UE)",
+        factory_filename="tasmota32.factory.bin",
+        flash_offset="0x0",
+    ),
+    FirmwareVariant(
+        "tasmota32s3.bin",    "ESP32-S3",
+        "Standard (ESP32-S3)",
+        factory_filename="tasmota32s3.factory.bin",
+        flash_offset="0x0",
+    ),
+    FirmwareVariant(
+        "tasmota32c3.bin",    "ESP32-C3",
+        "Standard (ESP32-C3)",
+        factory_filename="tasmota32c3.factory.bin",
+        flash_offset="0x0",
+    ),
+    FirmwareVariant(
+        "tasmota32c6.bin",    "ESP32-C6",
+        "Standard (ESP32-C6 / WiFi-6)",
+        factory_filename="tasmota32c6.factory.bin",
+        flash_offset="0x0",
+    ),
 ]
 
 
@@ -90,11 +120,17 @@ def flash_firmware(
     firmware_path: Path,
     chip: str = "auto",
     erase: bool = True,
+    flash_offset: str = "0x0",
     log_cb: Optional[Callable[[str], None]] = None,
     progress_cb: Optional[Callable[[int, int], None]] = None,
 ) -> None:
     """
     Flash firmware using esptool.
+
+    For ESP32 family the caller must supply the .factory.bin and flash_offset="0x0"
+    (bootloader + partition table + app in one image).  The regular .bin file is
+    app-only and belongs at 0x10000 – using it at 0x0 causes the infamous
+    "invalid header" boot-loop after erase.
 
     Runs esptool programmatically by temporarily redirecting stdout/stderr
     so log output can be captured and forwarded to *log_cb*.
@@ -106,6 +142,10 @@ def flash_firmware(
 
     if log_cb:
         log_cb(f"Eszköz azonosítása: {port}…")
+        if "factory" in firmware_path.name:
+            log_cb("ℹ  Factory binary: tartalmazza a bootloadert, partíciótáblát és az alkalmazást.")
+        elif chip.lower().startswith("esp32"):
+            log_cb("⚠  FIGYELEM: Nem factory binary! ESP32-re első flashelésnél tasmota32.factory.bin kell.")
 
     # Capture esptool output
     captured = io.StringIO()
@@ -113,7 +153,9 @@ def flash_firmware(
     sys.stdout = sys.stderr = captured
 
     try:
-        baud = "460800" if chip.lower() in ("esp32", "esp32s3", "esp32c3") else "115200"
+        chip_lower = chip.lower().replace("-", "")
+        is_esp32_family = chip_lower.startswith("esp32") or chip_lower == "auto"
+        baud = "460800" if is_esp32_family else "115200"
 
         if erase:
             if log_cb:
@@ -129,13 +171,15 @@ def flash_firmware(
             sys.stdout = sys.stderr = captured
 
         if log_cb:
-            log_cb(f"Firmware írása: {firmware_path.name}…")
+            log_cb(f"Firmware írása ({flash_offset}): {firmware_path.name}…")
 
         write_args = ["--port", port, "--baud", baud, "write_flash"]
-        if chip.lower() == "esp8266":
-            write_args += ["-fs", "1MB", "-fm", "dout"]
-        write_args += ["0x0", str(firmware_path)]
 
+        if chip_lower == "esp8266":
+            # ESP8266: force 1 MB flash size and DOUT mode for broad compatibility
+            write_args += ["-fs", "1MB", "-fm", "dout"]
+
+        write_args += [flash_offset, str(firmware_path)]
         esptool.main(write_args)
 
     finally:
@@ -145,4 +189,4 @@ def flash_firmware(
                 log_cb(f"[esptool] {line}")
 
     if log_cb:
-        log_cb("Égetés befejezve! Az eszköz újraindul.")
+        log_cb("✅ Égetés befejezve! Az eszköz újraindul.")
