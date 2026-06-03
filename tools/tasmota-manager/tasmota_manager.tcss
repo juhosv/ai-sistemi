@@ -324,10 +324,17 @@ TabbedContent ContentSwitcher {
     height: auto;
 }
 
+/* InteractiveBoardDiagram widget itself must auto-size */
+InteractiveBoardDiagram {
+    height: auto;
+    width: 100%;
+}
+
 /* The interactive board: two pin columns + chip body */
 .ibd-columns {
     height: auto;
     align: center top;
+    width: auto;
 }
 
 .ibd-col {

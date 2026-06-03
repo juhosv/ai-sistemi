@@ -572,16 +572,18 @@ class ConfigTab(TabPane):
         Uses a version counter so that if this is called multiple times in the
         same frame (e.g. once from on_mount and once from on_select_changed for
         the initial Select value), only the *last* scheduled build actually runs.
+        The board is re-queried inside _do_build so we always use the value
+        that is current at render time, not at schedule time.
         """
         self._diagram_build_version += 1
         version = self._diagram_build_version
-        board = self._get_current_board()
-        if not board:
-            return
 
         def _do_build() -> None:
             # Bail out if a newer build has been scheduled since we were queued.
             if self._diagram_build_version != version:
+                return
+            board = self._get_current_board()
+            if not board:
                 return
             try:
                 container = self.query_one("#gpio-diagram-container")
