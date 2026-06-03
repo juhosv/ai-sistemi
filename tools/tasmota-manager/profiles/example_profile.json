@@ -1,0 +1,25 @@
+{
+  "device_name": "Viktor teszt Sonoff",
+  "topic": "vj_smart_sonoff_2026",
+  "wifi": {
+    "ssid1": "HomeNetwork",
+    "password1": "",
+    "ssid2": "",
+    "password2": ""
+  },
+  "mqtt": {
+    "host": "broker.emqx.io",
+    "port": 1883,
+    "user": "",
+    "password": "",
+    "topic": "vj_smart_sonoff_2026",
+    "full_topic": "%prefix%/%topic%/"
+  },
+  "tele_period": 300,
+  "module_type": 18,
+  "gpio": {
+    "4": "switch",
+    "5": "switch",
+    "14": "relay"
+  }
+}
