@@ -178,13 +178,16 @@ def _parse_status10(lines: list[str]) -> dict:
                 if m and isinstance(val, str):
                     result["switches"][int(m.group(1))] = (val == "ON")
                     continue
-                # Counter1, Counter2, ... → pulse count integer
-                m = re.match(r"Counter(\d+)$", key)
-                if m:
-                    try:
-                        result["counters"][int(m.group(1))] = int(val)
-                    except (TypeError, ValueError):
-                        pass
+                # COUNTER.C1, COUNTER.C2, ... nested object format
+                # e.g. {"StatusSNS": {..., "COUNTER": {"C1": 1251}}}
+                if key == "COUNTER" and isinstance(val, dict):
+                    for ck, cv in val.items():
+                        cm = re.match(r"C(\d+)$", ck)
+                        if cm:
+                            try:
+                                result["counters"][int(cm.group(1))] = int(cv)
+                            except (TypeError, ValueError):
+                                pass
     return result
 
 
@@ -808,6 +811,8 @@ class BoardTab(TabPane):
         _POWER_RE = re.compile(r"POWER(\d*)\s*=\s*(ON|OFF)", re.IGNORECASE)
         _RESULT_POWER_RE = re.compile(r'"POWER(\d*)"\s*:\s*"(ON|OFF)"', re.IGNORECASE)
         _SWITCH_RE = re.compile(r'"Switch(\d+)"\s*:\s*"(ON|OFF)"', re.IGNORECASE)
+        # COUNTER in tele/SENSOR or STATUS10: "COUNTER":{"C1":1251}
+        _COUNTER_RE = re.compile(r'"C(\d+)"\s*:\s*(\d+)')
 
         # Debounce: after a device-initiated POWER event (from a physical switch press),
         # query Status 10 once so the switch GPIO's own state also refreshes.
@@ -875,6 +880,16 @@ class BoardTab(TabPane):
                 gpio = self._find_gpio_for_switch(inst)
                 if gpio is not None:
                     self._set_pin(gpio, state)
+
+            # Counter values from SENSOR/STATUS10: "COUNTER":{"C1":1251}
+            # Only parse lines that contain the COUNTER key to avoid false matches
+            if '"COUNTER"' in line:
+                for m in _COUNTER_RE.finditer(line):
+                    inst = int(m.group(1))
+                    count = int(m.group(2))
+                    gpio = self._find_gpio_for_type("counter", inst)
+                    if gpio is not None:
+                        self._set_counter_value(gpio, count)
 
             # After a POWER event, send Status 10 to confirm the actual switch states
             # (debounced: max once per second to avoid spamming the device)
@@ -1195,6 +1210,17 @@ class BoardTab(TabPane):
                 self._sensor_data[key] = val
             if key == "ENERGY" and isinstance(val, dict):
                 self._energy_data = val
+            # COUNTER.C1, C2, ... nested format from tele/SENSOR
+            if key == "COUNTER" and isinstance(val, dict):
+                for ck, cv in val.items():
+                    cm = re.match(r"C(\d+)$", ck)
+                    if cm:
+                        gpio = self._find_gpio_for_type("counter", int(cm.group(1)))
+                        if gpio is not None:
+                            try:
+                                self._set_counter_value(gpio, int(cv))
+                            except (TypeError, ValueError):
+                                pass
         self._update_sensor_panel()
 
     # ------------------------------------------------------------------
