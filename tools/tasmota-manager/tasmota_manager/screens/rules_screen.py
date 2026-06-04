@@ -173,6 +173,32 @@ def _trigger_needs_value(src: str) -> bool:
     return _TRIGGER_NEEDS_VALUE.get(src, not src.startswith("Rules#Timer"))
 
 
+# Predefined selectable values for discrete triggers
+_ONOFF_OPTIONS: list[tuple[str, str]] = [
+    ("BE – 1",  "1"),
+    ("KI – 0",  "0"),
+]
+
+_SWITCH_TOGGLE_OPTIONS: list[tuple[str, str]] = [
+    ("BE – 1",     "1"),
+    ("KI – 0",     "0"),
+    ("TOGGLE – 2", "2"),
+]
+
+
+def _get_trigger_value_options(src: str) -> Optional[list[tuple[str, str]]]:
+    """Return preset dropdown options if the trigger has discrete values, else None."""
+    if not src:
+        return None
+    if "#State" in src:
+        # Switch1#State, Switch2#State → 0/1/2(TOGGLE for switch)
+        if src.startswith("Switch"):
+            return _SWITCH_TOGGLE_OPTIONS
+        if src.startswith("Power"):
+            return _ONOFF_OPTIONS
+    return None  # numeric / free input
+
+
 # ---------------------------------------------------------------------------
 # Rule Card widget
 # ---------------------------------------------------------------------------
@@ -214,10 +240,19 @@ class RuleCard(Vertical):
                 allow_blank=False,
                 classes="rule-op-select",
             )
+            # Free numeric input (shown for sensor/counter triggers)
             yield Input(
                 placeholder="érték (pl. 30)",
                 id=f"rule-trigger-val-{eid}",
                 classes="rule-val-input",
+            )
+            # Predefined dropdown (shown for discrete triggers: switch, relay state)
+            yield Select(
+                options=[("BE – 1", "1"), ("KI – 0", "0")],
+                id=f"rule-trigger-val-sel-{eid}",
+                value="1",
+                allow_blank=False,
+                classes="rule-val-select hidden",
             )
 
         # THEN action row
@@ -283,18 +318,25 @@ class RuleCard(Vertical):
         """Collect current widget values into a RuleEntry."""
         eid = self.entry_id
         try:
-            src_sel = self.query_one(f"#rule-trigger-src-{eid}", Select)
-            op_sel  = self.query_one(f"#rule-trigger-op-{eid}", Select)
-            tval    = self.query_one(f"#rule-trigger-val-{eid}", Input).value.strip()
-            t_act   = self.query_one(f"#rule-then-action-{eid}", Select)
-            t_val   = self.query_one(f"#rule-then-value-{eid}", Input).value.strip()
-            e_act   = self.query_one(f"#rule-else-action-{eid}", Select)
-            e_val   = self.query_one(f"#rule-else-value-{eid}", Input).value.strip()
+            src_sel     = self.query_one(f"#rule-trigger-src-{eid}", Select)
+            op_sel      = self.query_one(f"#rule-trigger-op-{eid}", Select)
+            val_inp     = self.query_one(f"#rule-trigger-val-{eid}", Input)
+            val_sel     = self.query_one(f"#rule-trigger-val-sel-{eid}", Select)
+            t_act       = self.query_one(f"#rule-then-action-{eid}", Select)
+            t_val       = self.query_one(f"#rule-then-value-{eid}", Input).value.strip()
+            e_act       = self.query_one(f"#rule-else-action-{eid}", Select)
+            e_val       = self.query_one(f"#rule-else-value-{eid}", Input).value.strip()
 
             trigger_src = src_sel.value if isinstance(src_sel.value, str) else ""
             operator    = op_sel.value if isinstance(op_sel.value, str) else ">"
             then_raw    = t_act.value if isinstance(t_act.value, str) else ""
             else_raw    = e_act.value if isinstance(e_act.value, str) else ""
+
+            # Use dropdown value if discrete selector is visible
+            if val_sel.has_class("hidden"):
+                tval = val_inp.value.strip()
+            else:
+                tval = str(val_sel.value) if isinstance(val_sel.value, str) else "1"
 
             then_cmd = _resolve_action(then_raw, t_val)
             else_cmd = _resolve_action(else_raw, e_val)
@@ -334,15 +376,31 @@ class RuleCard(Vertical):
             return
         src = event.value if isinstance(event.value, str) else ""
         needs_val = _trigger_needs_value(src)
+        preset_opts = _get_trigger_value_options(src)
         try:
-            op_sel  = self.query_one(f"#rule-trigger-op-{eid}", Select)
-            val_inp = self.query_one(f"#rule-trigger-val-{eid}", Input)
-            if needs_val:
-                op_sel.remove_class("hidden")
-                val_inp.remove_class("hidden")
-            else:
+            op_sel   = self.query_one(f"#rule-trigger-op-{eid}", Select)
+            val_inp  = self.query_one(f"#rule-trigger-val-{eid}", Input)
+            val_sel  = self.query_one(f"#rule-trigger-val-sel-{eid}", Select)
+
+            if not needs_val:
+                # Event-only trigger (System#Boot, Timer, …) – hide both
                 op_sel.add_class("hidden")
                 val_inp.add_class("hidden")
+                val_sel.add_class("hidden")
+            elif preset_opts is not None:
+                # Discrete value trigger (Switch, Power) – show dropdown, hide input
+                op_sel.remove_class("hidden")
+                val_inp.add_class("hidden")
+                val_sel.remove_class("hidden")
+                val_sel.set_options([(lbl, v) for lbl, v in preset_opts])
+                # Default to "=" operator for state comparisons
+                op_sel.value = "="
+            else:
+                # Numeric/free trigger (sensor, counter) – show input, hide dropdown
+                op_sel.remove_class("hidden")
+                val_inp.remove_class("hidden")
+                val_sel.add_class("hidden")
+                op_sel.value = ">"
         except Exception:
             pass
 
