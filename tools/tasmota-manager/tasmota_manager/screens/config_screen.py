@@ -7,6 +7,9 @@ import re
 from pathlib import Path
 from typing import Optional
 
+# GPIO parser shared with the Board tab
+from tasmota_manager.screens.board_screen import _parse_gpio_from_device
+
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical, ScrollableContainer
 from textual.reactive import reactive
@@ -935,6 +938,8 @@ class ConfigTab(TabPane):
             serial_bridge.send("Status 6")   # MQTT host, port, user (no password)
             await asyncio.sleep(0.4)
             serial_bridge.send("Status 2")   # Firmware / chip hardware
+            await asyncio.sleep(0.4)
+            serial_bridge.send("GPIO")        # GPIO function assignments
             await asyncio.sleep(1.0)         # Wait for all responses to arrive
 
             lines = list(serial_bridge.line_buffer)
@@ -1000,6 +1005,16 @@ class ConfigTab(TabPane):
                 filled.append(f"Chip: {chip}")
             else:
                 status_lbl.update("[dim]Chip nem azonosítható[/dim]")
+
+            # --- Parse GPIO assignments ---------------------------------
+            gpio_from_device = _parse_gpio_from_device(lines)
+            if gpio_from_device:
+                self._gpio_assignments = gpio_from_device
+                self._rebuild_board_diagram()
+                summary = ", ".join(
+                    f"GPIO{g}={t}" for g, t in sorted(gpio_from_device.items())
+                )
+                filled.append(f"GPIO ({len(gpio_from_device)} pin): {summary}")
 
             # --- Summary notification ----------------------------------
             filled_str = ", ".join(filled) if filled else "–"
