@@ -1117,18 +1117,51 @@ class ConfigTab(TabPane):
         cfg = self._build_config()
         cmds = cfg.to_tasmota_commands()   # list of (cmd, val) tuples
 
-        # Use Backlog0 to send all commands atomically.
-        # This prevents the "Module" command from triggering an immediate restart
-        # before the GPIO assignment commands are processed.
-        # Backlog0 queues all commands; Tasmota processes them sequentially and
-        # only restarts after the full Backlog is complete.
-        backlog_parts = [f"{cmd} {val}" for cmd, val in cmds]
+        # Split into two phases to avoid overflowing Tasmota's ~256-byte serial buffer.
+        #
+        # Phase 1 – WiFi / MQTT / TelePeriod – sent individually (safe, no restart risk)
+        # Phase 2 – Module + GPIO + Restart  – sent as a short Backlog0 so that the
+        #            Module command cannot trigger an early restart before GPIO commands
+        #            are processed (Backlog0 delays the restart until the last item).
+
+        _GPIO_PREFIXES = ("GPIO",)
+        _SKIP_SOLO     = {"Module", "Restart"}
+
+        phase1: list[str] = []
+        module_cmd: str   = ""
+        gpio_cmds:  list[str] = []
+
+        for cmd, val in cmds:
+            full = f"{cmd} {val}"
+            if cmd == "Module":
+                module_cmd = full
+            elif cmd.startswith("GPIO"):
+                gpio_cmds.append(full)
+            elif cmd == "Restart":
+                pass   # handled in phase 2
+            else:
+                phase1.append(full)
+
+        # Phase 2: short Backlog0 – only Module + GPIO + Restart
+        backlog_parts: list[str] = []
+        if module_cmd:
+            backlog_parts.append(module_cmd)
+        backlog_parts.extend(gpio_cmds)
+        backlog_parts.append("Restart 1")
         backlog_cmd = "Backlog0 " + "; ".join(backlog_parts)
 
         try:
+            # Phase 1: send WiFi / MQTT / general settings individually
+            if phase1:
+                serial_bridge.comm.send_config_block(phase1, delay=0.2)
+
+            # Phase 2: atomic Module + GPIO + Restart
             serial_bridge.send(backlog_cmd)
+
+            gpio_count = len(gpio_cmds)
             self.notify(
-                f"Konfig elküldve Backlog-ban ({len(cmds)} parancs).",
+                f"Konfig elküldve: {len(phase1)} alap parancs + "
+                f"Backlog({gpio_count} GPIO + Module + Restart)",
                 severity="information",
             )
             self.app.sync_gpio_to_board()  # type: ignore[attr-defined]
