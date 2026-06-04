@@ -944,3 +944,8 @@ InteractiveBoardDiagram {
     height: 3;
     content-align: left middle;
 }
+
+#rules-fetched-panel {
+    margin-top: 1;
+    height: auto;
+}

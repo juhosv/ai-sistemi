@@ -555,6 +555,7 @@ class RulesTab(TabPane):
             ("Timer indítása",      "__TIMER"),
             ("MQTT Publish",        "__PUBLISH"),
         ]
+        self._fetched_rule_text: str = ""   # shown in separate panel, not overwritten by timer
 
     def compose(self) -> ComposeResult:
         with Vertical(id="rules-tab"):
@@ -590,7 +591,7 @@ class RulesTab(TabPane):
                     classes="hint",
                 )
 
-            # --- Preview ---------------------------------------------------
+            # --- Generated preview (auto-refreshed) -------------------------
             with Vertical(id="rules-preview-panel"):
                 yield Static("Generált Tasmota parancsok", classes="section-title")
                 yield TextArea(
@@ -605,6 +606,17 @@ class RulesTab(TabPane):
             with Horizontal(id="rules-send-row"):
                 yield Button("📡 Küldés soros porton", id="rules-send-serial-btn", variant="primary")
                 yield Label("", id="rules-send-status", classes="hint")
+
+            # --- Fetched rule panel (only visible after fetch) ---------------
+            with Vertical(id="rules-fetched-panel", classes="hidden"):
+                yield Static("Eszközről lekérdezett Rule", classes="section-title")
+                yield TextArea(
+                    "",
+                    id="rules-fetched-area",
+                    read_only=True,
+                    show_line_numbers=False,
+                    classes="rules-preview-textarea",
+                )
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -789,12 +801,14 @@ class RulesTab(TabPane):
         try:
             serial_bridge.clear_buffer()
             serial_bridge.send(f"Rule{rule_num}")
-            await asyncio.sleep(1.5)       # allow time for response + board polling
+            await asyncio.sleep(1.5)
             lines = list(serial_bridge.line_buffer)
             raw = _parse_rule_response(lines, rule_num)
             if raw:
-                preview = self.query_one("#rules-preview-area", TextArea)
-                preview.load_text(raw)
+                self._fetched_rule_text = raw
+                fetched_area = self.query_one("#rules-fetched-area", TextArea)
+                fetched_area.load_text(raw)
+                self.query_one("#rules-fetched-panel").remove_class("hidden")
                 status_lbl.update(f"[green]● Rule{rule_num} lekérdezve[/green]")
                 self.notify(f"Rule{rule_num} lekérdezve az eszközről.", severity="information")
             else:
