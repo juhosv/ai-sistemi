@@ -755,8 +755,10 @@ class BoardTab(TabPane):
         btn.label = "Lekérés…"
         try:
             serial_bridge.clear_buffer()
-            # Reset GPIO so stale Config-tab data doesn't remain
+            # Clear stale GPIO data immediately so UI doesn't show old Config-tab data
             self._gpio_assignments = {}
+            self._rebuild_outputs_panel()
+            self._rebuild_pin_table()
 
             # Phase 1: standard Status queries
             for cmd, delay in [

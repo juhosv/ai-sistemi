@@ -1115,10 +1115,22 @@ class ConfigTab(TabPane):
             self.notify("Nincs soros port kapcsolat!", severity="warning")
             return
         cfg = self._build_config()
-        cmds = cfg.to_tasmota_command_strings()
+        cmds = cfg.to_tasmota_commands()   # list of (cmd, val) tuples
+
+        # Use Backlog0 to send all commands atomically.
+        # This prevents the "Module" command from triggering an immediate restart
+        # before the GPIO assignment commands are processed.
+        # Backlog0 queues all commands; Tasmota processes them sequentially and
+        # only restarts after the full Backlog is complete.
+        backlog_parts = [f"{cmd} {val}" for cmd, val in cmds]
+        backlog_cmd = "Backlog0 " + "; ".join(backlog_parts)
+
         try:
-            serial_bridge.comm.send_config_block(cmds)
-            self.notify(f"{len(cmds)} parancs elküldve soros porton.", severity="information")
+            serial_bridge.send(backlog_cmd)
+            self.notify(
+                f"Konfig elküldve Backlog-ban ({len(cmds)} parancs).",
+                severity="information",
+            )
             self.app.sync_gpio_to_board()  # type: ignore[attr-defined]
         except Exception as exc:
             self.notify(f"Hiba: {exc}", severity="error")
