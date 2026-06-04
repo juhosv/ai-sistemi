@@ -682,7 +682,7 @@ class BoardTab(TabPane):
     # ------------------------------------------------------------------
 
     async def _poll_device(self) -> None:
-        """Send Status 1/2/5/10/11 via serial and parse responses."""
+        """Send Status 1/2/5/10/11/13 via serial and parse responses."""
         # Sync GPIO assignments from Config tab before polling
         try:
             self.app.sync_gpio_to_board()  # type: ignore[attr-defined]
@@ -690,7 +690,11 @@ class BoardTab(TabPane):
             pass
 
         serial_bridge = self.app.serial_bridge  # type: ignore[attr-defined]
-        if not serial_bridge.is_connected or self._polling:
+        if self._polling:
+            return
+        if not serial_bridge.is_connected:
+            self.notify("Nincs soros port kapcsolat! (Serial tab → Csatlakozás)",
+                        severity="warning", timeout=5)
             return
         self._polling = True
         btn: Button = self.query_one("#board-poll-btn")
@@ -1115,21 +1119,46 @@ class BoardTab(TabPane):
         except Exception:
             use_serial = True
 
+        sent = False
         if not use_serial:
             mqtt_mgr = self.app.mqtt_manager  # type: ignore[attr-defined]
             topic = self._dev_topic
             if mqtt_mgr.connected and topic:
                 mqtt_mgr.publish(f"cmnd/{topic}/{cmd}", value)
-                self.notify(f"MQTT → {cmd} {value}", severity="information")
-                return
-            # Fall through to serial if MQTT not connected
+                self.notify(f"MQTT → cmnd/{topic}/{cmd}  {value}", severity="information")
+                sent = True
 
+        if not sent:
+            serial_bridge = self.app.serial_bridge  # type: ignore[attr-defined]
+            if serial_bridge.is_connected:
+                serial_bridge.send(f"{cmd} {value}")
+                self.notify(f"Serial → {cmd} {value}", severity="information")
+                sent = True
+            else:
+                self.notify(
+                    "Nincs soros port kapcsolat! (Serial tab → Csatlakozás)",
+                    severity="error", timeout=5,
+                )
+                return
+
+        # For relay/LED commands: re-query Status 11 after short delay to confirm state
+        if sent and cmd.startswith("POWER"):
+            self.run_worker(self._verify_relay_state(), name="board_relay_verify")
+
+    async def _verify_relay_state(self) -> None:
+        """Wait briefly then query Status 11 to confirm relay state changed."""
+        await asyncio.sleep(0.6)
         serial_bridge = self.app.serial_bridge  # type: ignore[attr-defined]
-        if serial_bridge.is_connected:
-            serial_bridge.send(f"{cmd} {value}")
-            self.notify(f"Serial → {cmd} {value}", severity="information")
-        else:
-            self.notify("Nincs kapcsolat!", severity="warning")
+        if not serial_bridge.is_connected:
+            return
+        try:
+            serial_bridge.clear_buffer()
+            serial_bridge.send("Status 11")
+            await asyncio.sleep(0.5)
+            lines = list(serial_bridge.line_buffer)
+            self._apply_status11(_parse_status11(lines))
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     # UI panel updates

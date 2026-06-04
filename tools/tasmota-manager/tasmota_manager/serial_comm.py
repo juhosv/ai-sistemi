@@ -163,8 +163,11 @@ class AsyncSerialBridge:
 
     def send(self, command: str) -> None:
         self.comm.send(command)
-        # Log outgoing command (called from any thread)
-        self._write_log("TX", command.strip())
+        cmd = command.strip()
+        self._write_log("TX", cmd)
+        # Echo outgoing command into the queue so the Serial tab can display it
+        if self._loop and self._loop.is_running():
+            self._loop.call_soon_threadsafe(self.queue.put_nowait, f"> {cmd}")
 
     def clear_buffer(self) -> None:
         self.line_buffer.clear()

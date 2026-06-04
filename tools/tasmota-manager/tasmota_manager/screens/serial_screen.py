@@ -239,6 +239,10 @@ class SerialTab(TabPane):
                 continue
 
             ts = datetime.now().strftime("%H:%M:%S.%f")[:12]
+            # TX echo lines start with "> " (added by AsyncSerialBridge.send)
+            if line.startswith("> "):
+                self._log_line(f"[dim]{ts}[/dim]  [yellow]{line}[/yellow]")
+                continue
             colored = _colorize_line(line)
             self._log_line(f"[dim]{ts}[/dim]  {colored}")
 
