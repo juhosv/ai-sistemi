@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import time as _time_module
 from datetime import datetime
 from typing import Optional
 
@@ -669,6 +670,9 @@ class BoardTab(TabPane):
         self._pin_table_keys: dict[int, str] = {}   # gpio_num → row_key
         self._outputs_signature: tuple = ()          # snapshot of current outputs structure
         self._pwm_values: dict[int, int] = {}        # gpio_num → duty cycle 0-100
+        # Track our own TX relay/power commands so we don't misidentify their
+        # echo as a physical switch press (key: "POWER{n}", value: expiry monotonic)
+        self._sent_power_cmds: dict[str, float] = {}
 
         table: DataTable = self.query_one("#board-pin-datatable")
         table.add_column("Pin",    key="pin")
@@ -754,7 +758,6 @@ class BoardTab(TabPane):
 
     async def _serial_state_monitor(self) -> None:
         """Real-time serial line monitor: apply POWER/Switch/Sensor state changes."""
-        import time as _time
         serial_bridge = self.app.serial_bridge  # type: ignore[attr-defined]
         _POWER_RE = re.compile(r"POWER(\d*)\s*=\s*(ON|OFF)", re.IGNORECASE)
         _RESULT_POWER_RE = re.compile(r'"POWER(\d*)"\s*:\s*"(ON|OFF)"', re.IGNORECASE)
@@ -783,13 +786,20 @@ class BoardTab(TabPane):
                 gpio = self._find_gpio_for_relay(idx)
                 if gpio is not None:
                     self._set_pin(gpio, state)
-                # When a POWER{n} changes, Switch{n} controlling it also toggled.
-                # Optimistically flip the switch GPIO state for immediate UI feedback;
-                # a debounced Status 10 query will confirm the real physical state.
-                sw_gpio = self._find_gpio_for_switch(idx)
-                if sw_gpio is not None:
-                    current = self._pin_states.get(sw_gpio)
-                    self._set_pin(sw_gpio, not current if current is not None else True)
+
+                # If this POWER event was NOT triggered by our own TX command, it
+                # came from a physical switch press.  Optimistically flip the switch
+                # GPIO state so the pin table reflects the input change immediately;
+                # the debounced Status 10 query below will confirm the actual state.
+                power_key = f"POWER{idx}"
+                our_echo = (
+                    self._sent_power_cmds.get(power_key, 0) > _time_module.monotonic()
+                )
+                if not our_echo:
+                    sw_gpio = self._find_gpio_for_switch(idx)
+                    if sw_gpio is not None:
+                        current = self._pin_states.get(sw_gpio)
+                        self._set_pin(sw_gpio, not current if current is not None else True)
                 power_hit = True
 
             # RESULT JSON on serial: {"POWER1":"ON"} or {"Switch1":"ON"}
@@ -817,7 +827,7 @@ class BoardTab(TabPane):
             # After a POWER event, send Status 10 to confirm the actual switch states
             # (debounced: max once per second to avoid spamming the device)
             if power_hit and self._find_gpio_for_switch(1) is not None:
-                now = _time.monotonic()
+                now = _time_module.monotonic()
                 if now - _last_switch_poll >= 1.0:
                     _last_switch_poll = now
                     serial_bridge.send("Status 10")
@@ -1486,8 +1496,12 @@ class BoardTab(TabPane):
                 return
 
         # For relay/LED commands: re-query Status 11 after short delay to confirm state
-        if sent and cmd.startswith("POWER"):
+        if sent and cmd.upper().startswith("POWER"):
             self.run_worker(self._verify_relay_state(), name="board_relay_verify")
+            # Mark this POWER index as "sent by us" for the next 3 s so the state
+            # monitor won't mistake the device echo for a physical switch press.
+            key = cmd.upper()   # e.g. "POWER1"
+            self._sent_power_cmds[key] = _time_module.monotonic() + 3.0
 
     async def _gpio_diagnostics(self) -> None:
         """Send GPIO command and show raw response lines in a notification."""
