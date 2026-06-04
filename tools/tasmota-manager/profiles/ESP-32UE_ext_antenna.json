@@ -5,7 +5,7 @@
     "ssid1": "",
     "password1": "",
     "ssid2": "TP-Viktor",
-    "password2": ""
+    "password2": "asdfgh13"
   },
   "mqtt": {
     "host": "broker.emqx.io",

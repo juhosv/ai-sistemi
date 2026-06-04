@@ -201,6 +201,8 @@ class SerialTab(TabPane):
                 lbl.update(f"[green]● {port}  {baud} baud[/green]")
                 self._log_line(f"[green]── Kapcsolódva: {port} ({baud} baud) ──[/green]")
                 self._update_log_bar(serial_bridge.log_path)
+                # Clear stale data from any previously connected device
+                self.app.reset_device_data()  # type: ignore[attr-defined]
             except Exception as exc:
                 lbl.update(f"[red]Hiba: {exc}[/red]")
 

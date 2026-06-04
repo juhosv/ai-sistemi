@@ -249,6 +249,9 @@ class MqttConfig(BaseModel):
 class DeviceConfig(BaseModel):
     device_name: str = ""
     topic: str = ""
+    # Group hierarchy for MQTT topic: {region_id}/{user_id}/%prefix%/%topic%/
+    region_id: str = ""
+    user_id: str = ""
     wifi: WifiConfig = Field(default_factory=WifiConfig)
     mqtt: MqttConfig = Field(default_factory=MqttConfig)
     tele_period: int = 300

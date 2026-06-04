@@ -83,6 +83,21 @@ class TasmoApp(App):
     # GPIO sync: Config tab → Board tab
     # ------------------------------------------------------------------
 
+    def reset_device_data(self) -> None:
+        """Clear all device-specific data when connecting to a new device."""
+        try:
+            from tasmota_manager.screens.board_screen import BoardTab
+            board_tab: BoardTab = self.query_one(BoardTab)
+            board_tab.clear_device_data()
+        except Exception:
+            pass
+        try:
+            from tasmota_manager.screens.config_screen import ConfigTab
+            cfg_tab: ConfigTab = self.query_one(ConfigTab)
+            cfg_tab.clear_device_data()
+        except Exception:
+            pass
+
     def sync_gpio_to_board(self) -> None:
         """Push GPIO assignments from ConfigTab into BoardTab (only if no device data yet)."""
         try:
@@ -95,22 +110,43 @@ class TasmoApp(App):
         except Exception:
             pass
 
-    def sync_mqtt_to_monitor(self) -> None:
-        """Pre-fill the MQTT Monitor tab's host/port/topic from Config tab values."""
+    def sync_mqtt_to_monitor(self, topic_only: bool = False) -> None:
+        """Sync Config tab values to the MQTT Monitor tab.
+
+        topic_only=True  → only update the subscription topic (not host/port).
+        topic_only=False → update host/port too, but only if they are at default.
+        """
         try:
             from tasmota_manager.screens.mqtt_screen import MQTTTab
-            from textual.widgets import Input
+            from textual.widgets import Input, Select
+            from tasmota_manager.groups_manager import build_mqtt_subscribe_topic
             mqtt_tab: MQTTTab = self.query_one(MQTTTab)
-            host = self.query_one("#cfg-mqtt-host", Input).value.strip()
-            port = self.query_one("#cfg-mqtt-port", Input).value.strip()
-            topic = self.query_one("#cfg-topic", Input).value.strip()
-            if host:
-                mqtt_tab.query_one("#mqtt-host-input", Input).value = host
-            if port:
-                mqtt_tab.query_one("#mqtt-port-input", Input).value = port
-            if topic:
-                # Subscribe to all topics for this device
-                mqtt_tab.query_one("#mqtt-sub-topic-input", Input).value = f"{topic}/#"
+            topic = self.query_one("#cfg-mqtt-topic", Input).value.strip()
+            # Read region/user from Config tab dropdowns
+            region_id = ""
+            user_id = ""
+            try:
+                r = self.query_one("#cfg-region-select", Select).value
+                region_id = r if isinstance(r, str) else ""
+            except Exception:
+                pass
+            try:
+                u = self.query_one("#cfg-user-select", Select).value
+                user_id = u if isinstance(u, str) else ""
+            except Exception:
+                pass
+            # Always update the subscription topic
+            sub_topic = build_mqtt_subscribe_topic(region_id, user_id, topic)
+            mqtt_tab.query_one("#mqtt-sub-topic-input", Input).value = sub_topic
+            # Only update host/port if not in topic_only mode
+            if not topic_only:
+                host = self.query_one("#cfg-mqtt-host", Input).value.strip()
+                port = self.query_one("#cfg-mqtt-port", Input).value.strip()
+                current_host = mqtt_tab.query_one("#mqtt-host-input", Input).value.strip()
+                if host and (not current_host or current_host == "broker.emqx.io"):
+                    mqtt_tab.query_one("#mqtt-host-input", Input).value = host
+                if port:
+                    mqtt_tab.query_one("#mqtt-port-input", Input).value = port
         except Exception:
             pass
 
@@ -118,21 +154,10 @@ class TasmoApp(App):
         """When tabs open: sync data between tabs as needed."""
         tab_id = getattr(event, "tab", None) and getattr(event.tab, "id", None)
 
-        # MQTT tab opened → pre-fill broker settings from Config if not already set
+        # MQTT tab opened → always sync the topic; sync host/port only if at default
         if tab_id == "mqtt":
             try:
-                from tasmota_manager.screens.mqtt_screen import MQTTTab
-                from textual.widgets import Input
-                mqtt_tab: MQTTTab = self.query_one(MQTTTab)
-                current_host = mqtt_tab.query_one("#mqtt-host-input", Input).value.strip()
-                # Only sync if the MQTT tab still has the generic default host
-                cfg_host = ""
-                try:
-                    cfg_host = self.query_one("#cfg-mqtt-host", Input).value.strip()
-                except Exception:
-                    pass
-                if cfg_host and (not current_host or current_host == "broker.emqx.io"):
-                    self.sync_mqtt_to_monitor()
+                self.sync_mqtt_to_monitor(topic_only=False)
             except Exception:
                 pass
 

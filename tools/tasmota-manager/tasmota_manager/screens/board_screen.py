@@ -1316,6 +1316,54 @@ class BoardTab(TabPane):
         self._rebuild_pin_table()
         self._rebuild_outputs_panel()
 
+    def clear_device_data(self) -> None:
+        """Reset all device-specific state (called when a new serial connection is made)."""
+        self._gpio_assignments = {}
+        self._pin_states       = {}
+        self._pwm_values       = {}
+        self._counter_values   = {}
+        self._sent_power_cmds  = {}
+        self._dev_hostname     = ""
+        self._dev_topic        = ""
+        self._dev_firmware     = ""
+        self._dev_hardware     = ""
+        self._dev_module_id    = None
+        self._dev_heap         = 0
+        self._wifi_ssid        = ""
+        self._wifi_ip          = ""
+        self._wifi_rssi        = None
+        self._mqtt_host        = ""
+        self._mqtt_port        = 0
+        self._mqtt_client      = ""
+        self._mqtt_count       = 0
+        self._sensor_data      = {}
+        self._energy_data      = {}
+        self._uptime           = ""
+        # Clear diagram
+        try:
+            diag: BoardDiagram = self.query_one("#board-diagram", BoardDiagram)
+            diag.set_gpio_functions({})
+            diag._pwm_values    = {}
+            diag._counter_values = {}
+            diag._pin_states    = {}
+        except Exception:
+            pass
+        # Clear pin table
+        try:
+            table: DataTable = self.query_one("#board-pin-datatable")
+            table.clear()
+            self._pin_table_keys = {}
+        except Exception:
+            pass
+        # Rebuild empty outputs panel
+        self._outputs_signature = ()
+        self._rebuild_outputs_panel()
+        # Clear device info labels
+        self._update_device_panel()
+        self._update_wifi_panel()
+        self._update_mqtt_panel()
+        self._update_sensor_panel()
+
     # ------------------------------------------------------------------
     # Pin table rebuild
     # ------------------------------------------------------------------
@@ -1713,8 +1761,14 @@ class BoardTab(TabPane):
 
     def _update_wifi_panel(self) -> None:
         try:
-            if self._wifi_ssid or self._wifi_ip:
+            connected = (
+                bool(self._wifi_ip)
+                and self._wifi_ip not in ("0.0.0.0", "")
+            )
+            if connected:
                 self.query_one("#board-wifi-state").update("[green]● Csatlakozva[/green]")
+            elif self._wifi_ssid:
+                self.query_one("#board-wifi-state").update("[yellow]● Csatlakozás...[/yellow]")
             else:
                 self.query_one("#board-wifi-state").update("[dim]● –[/dim]")
             self.query_one("#board-wifi-ssid").update(

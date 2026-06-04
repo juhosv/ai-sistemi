@@ -188,6 +188,116 @@ TabbedContent ContentSwitcher {
     layout: horizontal;
     align: left middle;
     margin: 0 0 0 0;
+    overflow: hidden hidden;
+}
+
+#config-profile-select {
+    width: 28;
+}
+
+#cfg-load-btn {
+    width: 16;
+}
+
+#cfg-save-btn {
+    width: 14;
+}
+
+#cfg-profile-name-input {
+    width: 36;
+}
+
+#config-group-row {
+    height: 3;
+    layout: horizontal;
+    align: left middle;
+    margin: 0 0 0 0;
+    overflow: hidden hidden;
+}
+
+#cfg-region-select {
+    width: 30;
+}
+
+#cfg-user-select {
+    width: 26;
+}
+
+#cfg-groups-edit-btn {
+    width: 16;
+}
+
+#config-group-row Label,
+.cfg-row-label {
+    height: 3;
+    content-align: left middle;
+    padding: 0 1;
+    color: $text-muted;
+}
+
+#cfg-reset-btn {
+    width: 12;
+    margin-left: 1;
+}
+
+#cfg-groups-editor {
+    height: auto;
+    border: round $accent;
+    padding: 1 2;
+    margin: 0 0 1 0;
+    background: $surface;
+}
+
+#cfg-groups-editor.hidden {
+    display: none;
+}
+
+#cfg-groups-editor-inner {
+    height: auto;
+    layout: horizontal;
+}
+
+#cfg-groups-region-col {
+    width: 1fr;
+    padding: 0 2 0 0;
+}
+
+#cfg-groups-user-col {
+    width: 1fr;
+    padding: 0 0 0 2;
+}
+
+.subsection-title {
+    color: $text-muted;
+    text-style: bold;
+    margin: 0 0 1 0;
+}
+
+#cfg-edit-region-select,
+#cfg-edit-user-select {
+    width: 1fr;
+    margin: 0 0 1 0;
+}
+
+#cfg-new-region-id,
+#cfg-new-user-id {
+    width: 20;
+}
+
+#cfg-new-region-name,
+#cfg-new-user-name {
+    width: 1fr;
+}
+
+#cfg-add-region-btn,
+#cfg-add-user-btn {
+    width: 14;
+}
+
+#cfg-del-region-btn,
+#cfg-del-user-btn {
+    width: 20;
+    margin: 1 0 0 0;
 }
 
 #config-fetch-row {
@@ -465,19 +575,19 @@ InteractiveBoardDiagram {
 }
 
 #mqtt-host-input {
-    width: 28;
+    width: 32;
 }
 
 #mqtt-port-input {
-    width: 8;
+    width: 12;
 }
 
 #mqtt-sub-topic-input {
-    width: 22;
+    width: 36;
 }
 
 #mqtt-connect-btn {
-    width: 16;
+    width: 18;
 }
 
 #mqtt-conn-status {
