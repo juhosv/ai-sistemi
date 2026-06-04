@@ -95,9 +95,48 @@ class TasmoApp(App):
         except Exception:
             pass
 
+    def sync_mqtt_to_monitor(self) -> None:
+        """Pre-fill the MQTT Monitor tab's host/port/topic from Config tab values."""
+        try:
+            from tasmota_manager.screens.mqtt_screen import MQTTTab
+            from textual.widgets import Input
+            mqtt_tab: MQTTTab = self.query_one(MQTTTab)
+            host = self.query_one("#cfg-mqtt-host", Input).value.strip()
+            port = self.query_one("#cfg-mqtt-port", Input).value.strip()
+            topic = self.query_one("#cfg-topic", Input).value.strip()
+            if host:
+                mqtt_tab.query_one("#mqtt-host-input", Input).value = host
+            if port:
+                mqtt_tab.query_one("#mqtt-port-input", Input).value = port
+            if topic:
+                # Subscribe to all topics for this device
+                mqtt_tab.query_one("#mqtt-sub-topic-input", Input).value = f"{topic}/#"
+        except Exception:
+            pass
+
     def on_tabbed_content_tab_activated(self, event) -> None:  # type: ignore[override]
-        """When Board tab opens: only pre-fill GPIO from Config if board has none yet."""
-        if getattr(event, "tab", None) and getattr(event.tab, "id", None) == "board":
+        """When tabs open: sync data between tabs as needed."""
+        tab_id = getattr(event, "tab", None) and getattr(event.tab, "id", None)
+
+        # MQTT tab opened → pre-fill broker settings from Config if not already set
+        if tab_id == "mqtt":
+            try:
+                from tasmota_manager.screens.mqtt_screen import MQTTTab
+                from textual.widgets import Input
+                mqtt_tab: MQTTTab = self.query_one(MQTTTab)
+                current_host = mqtt_tab.query_one("#mqtt-host-input", Input).value.strip()
+                # Only sync if the MQTT tab still has the generic default host
+                cfg_host = ""
+                try:
+                    cfg_host = self.query_one("#cfg-mqtt-host", Input).value.strip()
+                except Exception:
+                    pass
+                if cfg_host and (not current_host or current_host == "broker.emqx.io"):
+                    self.sync_mqtt_to_monitor()
+            except Exception:
+                pass
+
+        if tab_id == "board":
             try:
                 from tasmota_manager.screens.board_screen import BoardTab
                 board_tab: BoardTab = self.query_one(BoardTab)

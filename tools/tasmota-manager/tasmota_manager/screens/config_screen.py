@@ -1026,6 +1026,11 @@ class ConfigTab(TabPane):
                 timeout=8,
             )
             self._update_preview()
+            # Push broker/topic settings to MQTT Monitor tab
+            try:
+                self.app.sync_mqtt_to_monitor()  # type: ignore[attr-defined]
+            except Exception:
+                pass
 
         except Exception as exc:
             status_lbl.update(f"[red]Hiba: {exc}[/red]")
