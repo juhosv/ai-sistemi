@@ -779,3 +779,148 @@ InteractiveBoardDiagram {
 .pin-boot-sensitive {
     color: $warning;
 }
+
+/* ------------------------------------------------------------------ */
+/* Rules Tab                                                            */
+/* ------------------------------------------------------------------ */
+
+#rules-tab {
+    height: 1fr;
+    padding: 0 1;
+}
+
+#rules-control-row {
+    height: 3;
+    margin: 1 0;
+    align: left middle;
+}
+
+#rules-control-row Label {
+    height: 3;
+    content-align: left middle;
+    padding: 0 1;
+}
+
+#rules-rule-select {
+    width: 14;
+    margin-right: 1;
+}
+
+#rules-add-btn {
+    width: 22;
+    margin-right: 1;
+}
+
+#rules-clear-btn {
+    width: 16;
+    margin-right: 1;
+}
+
+#rules-fetch-btn {
+    width: 16;
+}
+
+#rules-cards-container {
+    height: 1fr;
+    border: solid $primary-darken-2;
+    padding: 0 1;
+}
+
+.rule-card {
+    border: solid $primary-darken-1;
+    margin: 1 0;
+    padding: 0 1 1 1;
+    height: auto;
+    background: $surface;
+}
+
+.rule-card:focus-within {
+    border: solid $accent;
+}
+
+.rule-card-header {
+    height: 3;
+    align: left middle;
+}
+
+.rule-card-title {
+    width: 1fr;
+    height: 3;
+    content-align: left middle;
+    color: $accent;
+    text-style: bold;
+}
+
+.rule-del-btn {
+    width: 12;
+    margin-left: 1;
+}
+
+.rule-row {
+    height: 3;
+    margin-top: 1;
+    align: left middle;
+}
+
+.rule-row-label {
+    width: 14;
+    height: 3;
+    content-align: right middle;
+    padding: 0 1;
+    color: $text-muted;
+}
+
+.rule-trigger-select {
+    width: 30;
+    margin-right: 1;
+}
+
+.rule-op-select {
+    width: 8;
+    margin-right: 1;
+}
+
+.rule-val-input {
+    width: 14;
+}
+
+.rule-action-select {
+    width: 30;
+    margin-right: 1;
+}
+
+.rule-card-footer {
+    height: 3;
+    margin-top: 1;
+    align: right middle;
+}
+
+.rule-else-toggle-btn {
+    width: 30;
+}
+
+#rules-preview-panel {
+    height: auto;
+    margin-top: 1;
+}
+
+.rules-preview-textarea {
+    height: 8;
+    border: solid $primary-darken-2;
+}
+
+#rules-send-row {
+    height: 3;
+    margin-top: 1;
+    align: left middle;
+}
+
+#rules-send-serial-btn {
+    width: 24;
+    margin-right: 2;
+}
+
+#rules-send-status {
+    height: 3;
+    content-align: left middle;
+}

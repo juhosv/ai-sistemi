@@ -14,6 +14,7 @@ from tasmota_manager.screens.serial_screen import SerialTab
 from tasmota_manager.screens.config_screen import ConfigTab
 from tasmota_manager.screens.mqtt_screen import MQTTTab
 from tasmota_manager.screens.board_screen import BoardTab
+from tasmota_manager.screens.rules_screen import RulesTab
 
 CSS_PATH = Path(__file__).parent.parent / "tasmota_manager.tcss"
 
@@ -29,6 +30,7 @@ class TasmoApp(App):
         Binding("f3", "switch_tab('config')",  "Config",  show=True),
         Binding("f4", "switch_tab('mqtt')",    "MQTT",    show=True),
         Binding("f5", "switch_tab('board')",   "Board",   show=True),
+        Binding("f6", "switch_tab('rules')",   "Rules",   show=True),
         Binding("ctrl+s", "save_config",       "Mentés",  show=True),
         Binding("q", "quit",                   "Kilépés", show=True),
     ]
@@ -54,6 +56,7 @@ class TasmoApp(App):
             yield ConfigTab("⚙ Config", id="config")
             yield MQTTTab("📡 MQTT",   id="mqtt")
             yield BoardTab("🔌 Board",  id="board")
+            yield RulesTab("📋 Rules",  id="rules")
         yield Footer()
 
     # ------------------------------------------------------------------
@@ -168,6 +171,16 @@ class TasmoApp(App):
                 # Only copy from Config if no device data has been loaded yet
                 if not board_tab._gpio_assignments:
                     self.sync_gpio_to_board()
+            except Exception:
+                pass
+
+        if tab_id == "rules":
+            try:
+                from tasmota_manager.screens.config_screen import ConfigTab
+                from tasmota_manager.screens.rules_screen import RulesTab
+                cfg_tab: ConfigTab = self.query_one(ConfigTab)
+                rules_tab: RulesTab = self.query_one(RulesTab)
+                rules_tab.update_from_gpio(cfg_tab._get_gpio_assignments())
             except Exception:
                 pass
 
