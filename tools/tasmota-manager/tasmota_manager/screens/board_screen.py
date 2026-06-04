@@ -264,54 +264,79 @@ def _parse_status6(lines: list[str]) -> dict:
     return result
 
 
-def _parse_gpio_cmd(lines: list[str]) -> dict[int, str]:
+def _parse_gpio_from_device(lines: list[str]) -> dict[int, str]:
     """
-    Parse the Tasmota `GPIO` command response.
+    Parse GPIO assignments from Tasmota serial/MQTT responses.
 
-    Tasmota returns e.g.:
-        {"GPIO":{"0":0,"2":0,"4":21,"5":160,...}}
-    Where values are numeric Tasmota function codes.
+    Priority order:
+    1. Status 13  → {"StatusGPIO":{"GPIO0":0,"GPIO4":160,"GPIO12":21,...}}
+       This is the most reliable source (Tasmota 12+).
+    2. Individual GPIO query  → {"GPIO4":160} (sent per-pin, not used currently)
 
-    Some older versions return strings like "Relay1 (21)" –
-    we extract the number in parentheses as fallback.
-
-    Returns {gpio_num: type_id} using the reverse code table,
-    skipping GPIOs assigned to code 0 (None).
+    Returns {gpio_num: type_id} using the reverse code table.
+    Only non-zero (assigned) GPIOs are included.
     """
     result: dict[int, str] = {}
+
+    # --- Strategy 1: Status 13 → StatusGPIO ----------------------------
     for line in lines:
-        if '"GPIO"' not in line:
+        if "StatusGPIO" not in line:
             continue
         data = _extract_json(line)
-        if not data or "GPIO" not in data:
+        if not data:
             continue
-        gpio_map = data["GPIO"]
+        gpio_map = data.get("StatusGPIO", {})
         if not isinstance(gpio_map, dict):
             continue
-        for gpio_str, val in gpio_map.items():
-            try:
-                gpio_num = int(gpio_str)
-            except (ValueError, TypeError):
+        for key, val in gpio_map.items():
+            # Keys like "GPIO0", "GPIO4", ...
+            m = re.match(r"GPIO(\d+)$", key)
+            if not m:
                 continue
-            # val may be int or string like "Relay1 (21)"
-            code: Optional[int] = None
-            if isinstance(val, int):
-                code = val
-            elif isinstance(val, str):
-                m = re.search(r"\((\d+)\)", val)
-                if m:
-                    code = int(m.group(1))
-                else:
-                    try:
-                        code = int(val)
-                    except (ValueError, TypeError):
-                        pass
-            if code is None or code == 0:
+            gpio_num = int(m.group(1))
+            code = _to_code(val)
+            if code and code != 0:
+                type_id = _TASMOTA_CODE_TO_TYPE.get(code)
+                if type_id and type_id != "none":
+                    result[gpio_num] = type_id
+        if result:
+            return result   # got valid data from Status 13 – done
+
+    # --- Strategy 2: individual {"GPIOx": code} lines ------------------
+    # These come from querying `GPIO 4`, `GPIO 12`, etc.
+    for line in lines:
+        if '"GPIO' not in line:
+            continue
+        data = _extract_json(line)
+        if not isinstance(data, dict):
+            continue
+        for key, val in data.items():
+            m = re.match(r"GPIO(\d+)$", key)
+            if not m:
                 continue
-            type_id = _TASMOTA_CODE_TO_TYPE.get(code)
-            if type_id and type_id != "none":
-                result[gpio_num] = type_id
+            gpio_num = int(m.group(1))
+            code = _to_code(val)
+            if code and code != 0:
+                type_id = _TASMOTA_CODE_TO_TYPE.get(code)
+                if type_id and type_id != "none":
+                    result[gpio_num] = type_id
+
     return result
+
+
+def _to_code(val: object) -> Optional[int]:
+    """Convert a Tasmota GPIO value (int or 'Relay1 (21)' string) to numeric code."""
+    if isinstance(val, int):
+        return val
+    if isinstance(val, str):
+        m = re.search(r"\((\d+)\)", val)
+        if m:
+            return int(m.group(1))
+        try:
+            return int(val)
+        except (ValueError, TypeError):
+            pass
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -681,7 +706,7 @@ class BoardTab(TabPane):
                 ("Status 6",  0.4),   # MQTT broker info
                 ("Status 10", 0.5),   # sensors + energy
                 ("Status 11", 0.5),   # GPIO states, uptime
-                ("GPIO",      0.5),   # current GPIO assignments from device
+                ("Status 13", 0.5),   # GPIO assignments from device (Tasmota 12+)
             ]:
                 serial_bridge.send(cmd)
                 await asyncio.sleep(delay)
@@ -695,8 +720,8 @@ class BoardTab(TabPane):
             self._apply_status6(_parse_status6(lines))
             self._apply_status10(_parse_status10(lines))
             self._apply_status11(_parse_status11(lines))
-            # GPIO from device overrides Config tab assignments
-            gpio_from_device = _parse_gpio_cmd(lines)
+            # GPIO assignments from device (Status 13) override Config tab
+            gpio_from_device = _parse_gpio_from_device(lines)
             if gpio_from_device:
                 self._gpio_assignments = gpio_from_device
                 try:
