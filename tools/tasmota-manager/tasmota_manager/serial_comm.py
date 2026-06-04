@@ -131,6 +131,9 @@ class AsyncSerialBridge:
         self.comm = SerialComm()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self.queue: asyncio.Queue[str] = asyncio.Queue()
+        # Secondary queue for real-time state monitoring (board tab, etc.)
+        # Every received line is also put here so multiple consumers can react.
+        self.state_queue: asyncio.Queue[str] = asyncio.Queue(maxsize=200)
         # Rolling buffer of recent lines (thread-safe deque)
         self.line_buffer: collections.deque[str] = collections.deque(
             maxlen=self.BUFFER_SIZE
@@ -239,6 +242,14 @@ class AsyncSerialBridge:
         self._write_log("RX", line)
         if self._loop and self._loop.is_running():
             self._loop.call_soon_threadsafe(self.queue.put_nowait, line)
+            # Also feed the state queue (board tab real-time monitoring)
+            # Drop oldest entry if full to avoid blocking the reader thread
+            if self.state_queue.full():
+                try:
+                    self.state_queue.get_nowait()
+                except Exception:
+                    pass
+            self._loop.call_soon_threadsafe(self.state_queue.put_nowait, line)
 
     @property
     def is_connected(self) -> bool:

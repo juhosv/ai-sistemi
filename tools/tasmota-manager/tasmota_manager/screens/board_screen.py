@@ -154,8 +154,8 @@ def _parse_status5(lines: list[str]) -> dict:
 
 
 def _parse_status10(lines: list[str]) -> dict:
-    """StatusSNS → sensor readings dict + energy dict."""
-    result: dict = {"sensors": {}, "energy": {}}
+    """StatusSNS → sensor readings dict + energy dict + switch states."""
+    result: dict = {"sensors": {}, "energy": {}, "switches": {}}
     _SENSOR_KEYS = {"AM2301", "DHT11", "DHT22", "DS18B20", "BMP280",
                     "BME280", "BME680", "SHT3X", "AHT20", "SCD40",
                     "SI7021", "HTU21", "MCP9808", "TSL2561"}
@@ -171,6 +171,11 @@ def _parse_status10(lines: list[str]) -> dict:
                 result["sensors"][key] = val
             elif key == "ENERGY" and isinstance(val, dict):
                 result["energy"] = val
+            else:
+                # Switch1, Switch2, ... → {"ON"/"OFF"} states
+                m = re.match(r"Switch(\d+)$", key)
+                if m and isinstance(val, str):
+                    result["switches"][int(m.group(1))] = (val == "ON")
     return result
 
 
@@ -674,9 +679,10 @@ class BoardTab(TabPane):
         self._rebuild_pin_table()
         self._rebuild_outputs_panel()
 
-        self.run_worker(self._mqtt_state_listener(), exclusive=True,  name="board_mqtt")
-        self.run_worker(self._auto_poll_serial(),    exclusive=True,  name="board_serial_poll")
-        self.run_worker(self._chip_watcher(),        exclusive=False, name="board_chip_watcher")
+        self.run_worker(self._mqtt_state_listener(),    exclusive=True,  name="board_mqtt")
+        self.run_worker(self._auto_poll_serial(),       exclusive=True,  name="board_serial_poll")
+        self.run_worker(self._chip_watcher(),           exclusive=False, name="board_chip_watcher")
+        self.run_worker(self._serial_state_monitor(),   exclusive=False, name="board_serial_live")
 
     # ------------------------------------------------------------------
     # Select / button handlers
@@ -746,6 +752,44 @@ class BoardTab(TabPane):
             if rs.pressed_index == 1:
                 await self._poll_device()
 
+    async def _serial_state_monitor(self) -> None:
+        """Real-time serial line monitor: apply POWER/Switch/Sensor state changes."""
+        serial_bridge = self.app.serial_bridge  # type: ignore[attr-defined]
+        _POWER_RE = re.compile(r"POWER(\d*)\s*=\s*(ON|OFF)", re.IGNORECASE)
+        _RESULT_POWER_RE = re.compile(r'"POWER(\d*)"\s*:\s*"(ON|OFF)"', re.IGNORECASE)
+        _SWITCH_RE = re.compile(r'"Switch(\d+)"\s*:\s*"(ON|OFF)"', re.IGNORECASE)
+        while True:
+            try:
+                line = await asyncio.wait_for(serial_bridge.state_queue.get(), timeout=1.0)
+            except asyncio.TimeoutError:
+                continue
+            except Exception:
+                await asyncio.sleep(0.5)
+                continue
+
+            # Relay state: stat/.../POWER1 = ON
+            for m in _POWER_RE.finditer(line):
+                idx = int(m.group(1) or "1")
+                state = m.group(2).upper() == "ON"
+                gpio = self._find_gpio_for_relay(idx)
+                if gpio is not None:
+                    self._set_pin(gpio, state)
+
+            # RESULT JSON: {"POWER1":"ON"} or {"Switch1":"ON"}
+            for m in _RESULT_POWER_RE.finditer(line):
+                idx = int(m.group(1) or "1")
+                state = m.group(2).upper() == "ON"
+                gpio = self._find_gpio_for_relay(idx)
+                if gpio is not None:
+                    self._set_pin(gpio, state)
+
+            for m in _SWITCH_RE.finditer(line):
+                inst = int(m.group(1))
+                state = m.group(2).upper() == "ON"
+                gpio = self._find_gpio_for_switch(inst)
+                if gpio is not None:
+                    self._set_pin(gpio, state)
+
     async def _mqtt_state_listener(self) -> None:
         """Consume MQTT tele/STATE and tele/SENSOR messages."""
         mqtt_mgr = self.app.mqtt_manager  # type: ignore[attr-defined]
@@ -759,10 +803,19 @@ class BoardTab(TabPane):
                 continue
             # Re-put so MQTT monitor tab can also read it
             mqtt_mgr.queue.put_nowait(msg)
-            if msg.command == "STATE":
+            cmd = msg.command or ""
+            if cmd == "STATE":
                 self._apply_state(msg.payload_json)
-            elif msg.command == "SENSOR":
+            elif cmd == "SENSOR":
                 self._apply_sensor(msg.payload_json)
+            elif cmd == "RESULT":
+                # RESULT carries both relay power and switch state changes
+                self._apply_result(msg.payload_json)
+            elif re.match(r"POWER\d*$", cmd):
+                # Direct stat/.../POWER1 = ON/OFF topic
+                idx = int(cmd[5:]) if cmd[5:].isdigit() else 1
+                payload_str = str(msg.payload_json or msg.payload or "")
+                self._apply_power(idx, payload_str.strip().upper() == "ON")
 
     # ------------------------------------------------------------------
     # Serial polling
@@ -910,6 +963,10 @@ class BoardTab(TabPane):
             self._sensor_data = data["sensors"]
         if data.get("energy"):
             self._energy_data = data["energy"]
+        for inst, state in data.get("switches", {}).items():
+            gpio = self._find_gpio_for_switch(inst)
+            if gpio is not None:
+                self._set_pin(gpio, state)
         self._update_sensor_panel()
 
     def _apply_status11(self, data: dict) -> None:
@@ -978,6 +1035,51 @@ class BoardTab(TabPane):
                         self._set_pwm_value(gpio, int(pct))
                     except (TypeError, ValueError):
                         pass
+
+    def _apply_result(self, payload: object) -> None:
+        """Handle stat/.../RESULT messages: relay POWER states + switch states."""
+        if not isinstance(payload, dict):
+            return
+        for key, val in payload.items():
+            # POWER1, POWER2, ... → relay / PWM on-off state
+            m = re.match(r"POWER(\d*)$", key)
+            if m:
+                idx = int(m.group(1) or "1")
+                gpio = self._find_gpio_for_relay(idx)
+                if gpio is not None:
+                    self._set_pin(gpio, val == "ON")
+            # Switch1, Switch2, ... → switch input state
+            m2 = re.match(r"Switch(\d+)$", key)
+            if m2:
+                gpio = self._find_gpio_for_switch(int(m2.group(1)))
+                if gpio is not None:
+                    self._set_pin(gpio, val == "ON")
+            # Dimmer (single channel) or Dimmer1/2/...
+            m3 = re.match(r"Dimmer(\d*)$", key)
+            if m3:
+                inst = int(m3.group(1) or "1")
+                gpio = self._find_gpio_for_type("pwm", inst)
+                if gpio is not None:
+                    try:
+                        self._set_pwm_value(gpio, int(val))
+                    except (TypeError, ValueError):
+                        pass
+        # Channel array in RESULT (e.g. after Dimmer command)
+        channels = payload.get("Channel")
+        if isinstance(channels, list):
+            for i, pct in enumerate(channels):
+                gpio = self._find_gpio_for_type("pwm", i + 1)
+                if gpio is not None:
+                    try:
+                        self._set_pwm_value(gpio, int(pct))
+                    except (TypeError, ValueError):
+                        pass
+
+    def _apply_power(self, idx: int, state: bool) -> None:
+        """Handle stat/.../POWER{n} = ON|OFF direct topic messages."""
+        gpio = self._find_gpio_for_relay(idx)
+        if gpio is not None:
+            self._set_pin(gpio, state)
 
     def _apply_sensor(self, payload: object) -> None:
         if not isinstance(payload, dict):

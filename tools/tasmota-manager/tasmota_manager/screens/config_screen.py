@@ -900,7 +900,10 @@ class ConfigTab(TabPane):
             serial_bridge.clear_buffer()
 
             # Send all status and config queries
-            serial_bridge.send("Status 1")   # topic, module, full_topic
+            # Status 0 = full status dump; in Tasmota 15 Topic/Module are ONLY here
+            serial_bridge.send("Status 0")
+            await asyncio.sleep(0.6)
+            serial_bridge.send("Status 1")   # StatusPRM (baudrate, OTA url, etc.)
             await asyncio.sleep(0.4)
             serial_bridge.send("Status 5")   # active WiFi SSID, IP (no password)
             await asyncio.sleep(0.4)
