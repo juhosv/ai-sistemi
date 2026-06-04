@@ -783,38 +783,44 @@ class BoardTab(TabPane):
             for m in _POWER_RE.finditer(line):
                 idx = int(m.group(1) or "1")
                 state = m.group(2).upper() == "ON"
-                gpio = self._find_gpio_for_relay(idx)
-                if gpio is not None:
-                    self._set_pin(gpio, state)
-
-                # If this POWER event was NOT triggered by our own TX command, it
-                # came from a physical switch press.  Optimistically flip the switch
-                # GPIO state so the pin table reflects the input change immediately;
-                # the debounced Status 10 query below will confirm the actual state.
                 power_key = f"POWER{idx}"
                 our_echo = (
                     self._sent_power_cmds.get(power_key, 0) > _time_module.monotonic()
                 )
-                if not our_echo:
+
+                if our_echo:
+                    # Our own command echo → update relay GPIO state immediately.
+                    gpio = self._find_gpio_for_relay(idx)
+                    if gpio is not None:
+                        self._set_pin(gpio, state)
+                else:
+                    # Device-initiated event (physical switch press):
+                    # → only update the switch input GPIO, NOT the relay output.
+                    #   The relay state will be corrected on the next Status 11 poll.
+                    # → flip the switch GPIO optimistically; Status 10 query below
+                    #   will confirm the real physical state within 1 second.
                     sw_gpio = self._find_gpio_for_switch(idx)
                     if sw_gpio is not None:
                         current = self._pin_states.get(sw_gpio)
                         self._set_pin(sw_gpio, not current if current is not None else True)
-                power_hit = True
+                    power_hit = True
 
             # RESULT JSON on serial: {"POWER1":"ON"} or {"Switch1":"ON"}
             # Skip STATUS11 lines – they also contain "POWER1":"ON" but are periodic
-            # poll responses, not device-initiated events; we don't want to trigger
-            # a Switch flip or a Status 10 query for those.
+            # poll responses, not device-initiated events.
             if "STATUS11" not in line and "StatusSTS" not in line:
                 for m in _RESULT_POWER_RE.finditer(line):
                     idx = int(m.group(1) or "1")
                     state = m.group(2).upper() == "ON"
-                    gpio = self._find_gpio_for_relay(idx)
-                    if gpio is not None:
-                        self._set_pin(gpio, state)
-                        power_hit = True
-                    # Flip is done by the direct POWER topic handler above.
+                    power_key = f"POWER{idx}"
+                    our_echo = (
+                        self._sent_power_cmds.get(power_key, 0) > _time_module.monotonic()
+                    )
+                    if our_echo:
+                        gpio = self._find_gpio_for_relay(idx)
+                        if gpio is not None:
+                            self._set_pin(gpio, state)
+                    # Switch flip is already done by the direct POWER topic handler above.
 
             # Switch state directly in serial (e.g. from tele/SENSOR or STATUS10)
             for m in _SWITCH_RE.finditer(line):
