@@ -144,20 +144,19 @@ def _actions_from_assignments(assignments: dict[int, str]) -> list[tuple[str, st
     pwm_count = 0
     for gpio, type_id in sorted(assignments.items()):
         base = type_id.split("_")[0] if "_" in type_id else type_id
-        pin_tag = f" (G{gpio})"   # short form to avoid line-wrapping in dropdown
+        pin_tag = f" (G{gpio})"
         if base == "relay":
             relay_count += 1
-            options.append((f"Relay {relay_count} – BE{pin_tag}",     f"Power{relay_count} ON"))
-            options.append((f"Relay {relay_count} – KI{pin_tag}",     f"Power{relay_count} OFF"))
-            options.append((f"Relay {relay_count} – VÁLTÁS{pin_tag}", f"Power{relay_count} TOGGLE"))
+            # One entry per relay; ON/OFF/TOGGLE selected via the value dropdown
+            options.append((f"Relay {relay_count}{pin_tag}", f"__RELAY_{relay_count}"))
         elif base == "pwm":
             pwm_count += 1
-            options.append((f"PWM {pwm_count} – Fényerő{pin_tag}",    f"__DIMMER_{pwm_count}"))
-            options.append((f"PWM {pwm_count} – Direkt{pin_tag}",     f"__PWM_{pwm_count}"))
+            options.append((f"PWM {pwm_count} – Fényerő{pin_tag}", f"__DIMMER_{pwm_count}"))
+            options.append((f"PWM {pwm_count} – Direkt{pin_tag}",  f"__PWM_{pwm_count}"))
     # Always available
-    options.append(("Késleltetés (Delay)",    "__DELAY"))
-    options.append(("Timer indítása",         "__TIMER"))
-    options.append(("MQTT Publish",           "__PUBLISH"))
+    options.append(("Késleltetés (Delay)", "__DELAY"))
+    options.append(("Timer indítása",      "__TIMER"))
+    options.append(("MQTT Publish",        "__PUBLISH"))
     return options
 
 
@@ -180,15 +179,24 @@ _ONOFF_OPTIONS: list[tuple[str, str]] = [
 ]
 
 def _get_trigger_value_options(src: str) -> Optional[list[tuple[str, str]]]:
-    """Return preset dropdown options if the trigger has discrete values, else None.
-
-    Switch#State and Power#State accept 0 (KI) or 1 (BE).
-    Returns None for numeric/free-input triggers.
-    """
+    """Return preset dropdown options if the trigger has discrete values, else None."""
     if not src:
         return None
     if "#State" in src and (src.startswith("Switch") or src.startswith("Power")):
         return _ONOFF_OPTIONS
+    return None  # numeric / free input
+
+
+_RELAY_ACTION_OPTIONS: list[tuple[str, str]] = [
+    ("KI – OFF",    "OFF"),
+    ("BE – ON",     "ON"),
+    ("VÁLTÁS – TOGGLE", "TOGGLE"),
+]
+
+def _get_action_value_options(raw: str) -> Optional[list[tuple[str, str]]]:
+    """Return preset dropdown options for the action value, if applicable."""
+    if raw.startswith("__RELAY_"):
+        return _RELAY_ACTION_OPTIONS
     return None  # numeric / free input
 
 
@@ -263,6 +271,13 @@ class RuleCard(Vertical):
                 id=f"rule-then-value-{eid}",
                 classes="rule-val-input",
             )
+            yield Select(
+                options=[("KI – OFF", "OFF"), ("BE – ON", "ON"), ("VÁLTÁS", "TOGGLE")],
+                id=f"rule-then-value-sel-{eid}",
+                value="OFF",
+                allow_blank=False,
+                classes="rule-val-select hidden",
+            )
 
         # ELSE action row (hidden by default)
         with Horizontal(classes="rule-row", id=f"rule-else-row-{eid}"):
@@ -278,6 +293,13 @@ class RuleCard(Vertical):
                 placeholder="érték",
                 id=f"rule-else-value-{eid}",
                 classes="rule-val-input",
+            )
+            yield Select(
+                options=[("KI – OFF", "OFF"), ("BE – ON", "ON"), ("VÁLTÁS", "TOGGLE")],
+                id=f"rule-else-value-sel-{eid}",
+                value="OFF",
+                allow_blank=False,
+                classes="rule-val-select hidden",
             )
 
         with Horizontal(classes="rule-card-footer"):
@@ -315,10 +337,12 @@ class RuleCard(Vertical):
             op_sel      = self.query_one(f"#rule-trigger-op-{eid}", Select)
             val_inp     = self.query_one(f"#rule-trigger-val-{eid}", Input)
             val_sel     = self.query_one(f"#rule-trigger-val-sel-{eid}", Select)
-            t_act       = self.query_one(f"#rule-then-action-{eid}", Select)
-            t_val       = self.query_one(f"#rule-then-value-{eid}", Input).value.strip()
-            e_act       = self.query_one(f"#rule-else-action-{eid}", Select)
-            e_val       = self.query_one(f"#rule-else-value-{eid}", Input).value.strip()
+            t_act        = self.query_one(f"#rule-then-action-{eid}", Select)
+            t_val_inp    = self.query_one(f"#rule-then-value-{eid}", Input)
+            t_val_sel    = self.query_one(f"#rule-then-value-sel-{eid}", Select)
+            e_act        = self.query_one(f"#rule-else-action-{eid}", Select)
+            e_val_inp    = self.query_one(f"#rule-else-value-{eid}", Input)
+            e_val_sel    = self.query_one(f"#rule-else-value-sel-{eid}", Select)
 
             trigger_src = src_sel.value if isinstance(src_sel.value, str) else ""
             operator    = op_sel.value if isinstance(op_sel.value, str) else ">"
@@ -330,6 +354,12 @@ class RuleCard(Vertical):
                 tval = val_inp.value.strip()
             else:
                 tval = str(val_sel.value) if isinstance(val_sel.value, str) else "1"
+
+            # Action values: prefer select if visible
+            t_val = (str(t_val_sel.value) if not t_val_sel.has_class("hidden") and isinstance(t_val_sel.value, str)
+                     else t_val_inp.value.strip())
+            e_val = (str(e_val_sel.value) if not e_val_sel.has_class("hidden") and isinstance(e_val_sel.value, str)
+                     else e_val_inp.value.strip())
 
             then_cmd = _resolve_action(then_raw, t_val)
             else_cmd = _resolve_action(else_raw, e_val)
@@ -362,40 +392,55 @@ class RuleCard(Vertical):
                 btn.variant = "warning"
 
     def on_select_changed(self, event: Select.Changed) -> None:
-        """Show/hide value input based on trigger type."""
+        """Show/hide value input based on selected trigger or action."""
         eid = self.entry_id
         sid = event.select.id or ""
-        if sid != f"rule-trigger-src-{eid}":
-            return
-        src = event.value if isinstance(event.value, str) else ""
-        needs_val = _trigger_needs_value(src)
-        preset_opts = _get_trigger_value_options(src)
-        try:
-            op_sel   = self.query_one(f"#rule-trigger-op-{eid}", Select)
-            val_inp  = self.query_one(f"#rule-trigger-val-{eid}", Input)
-            val_sel  = self.query_one(f"#rule-trigger-val-sel-{eid}", Select)
 
-            if not needs_val:
-                # Event-only trigger (System#Boot, Timer, …) – hide both
-                op_sel.add_class("hidden")
-                val_inp.add_class("hidden")
-                val_sel.add_class("hidden")
-            elif preset_opts is not None:
-                # Discrete value trigger (Switch, Power) – show dropdown, hide input
-                op_sel.remove_class("hidden")
-                val_inp.add_class("hidden")
-                val_sel.remove_class("hidden")
-                val_sel.set_options([(lbl, v) for lbl, v in preset_opts])
-                # Default to "=" operator for state comparisons
-                op_sel.value = "="
-            else:
-                # Numeric/free trigger (sensor, counter) – show input, hide dropdown
-                op_sel.remove_class("hidden")
-                val_inp.remove_class("hidden")
-                val_sel.add_class("hidden")
-                op_sel.value = ">"
-        except Exception:
-            pass
+        # --- Trigger source changed ---
+        if sid == f"rule-trigger-src-{eid}":
+            src = event.value if isinstance(event.value, str) else ""
+            needs_val = _trigger_needs_value(src)
+            preset_opts = _get_trigger_value_options(src)
+            try:
+                op_sel  = self.query_one(f"#rule-trigger-op-{eid}", Select)
+                val_inp = self.query_one(f"#rule-trigger-val-{eid}", Input)
+                val_sel = self.query_one(f"#rule-trigger-val-sel-{eid}", Select)
+                if not needs_val:
+                    op_sel.add_class("hidden")
+                    val_inp.add_class("hidden")
+                    val_sel.add_class("hidden")
+                elif preset_opts is not None:
+                    op_sel.remove_class("hidden")
+                    val_inp.add_class("hidden")
+                    val_sel.remove_class("hidden")
+                    val_sel.set_options([(lbl, v) for lbl, v in preset_opts])
+                    op_sel.value = "="
+                else:
+                    op_sel.remove_class("hidden")
+                    val_inp.remove_class("hidden")
+                    val_sel.add_class("hidden")
+                    op_sel.value = ">"
+            except Exception:
+                pass
+
+        # --- Action changed (AKKOR or EGYÉBKÉNT) ---
+        for prefix in ("then", "else"):
+            if sid == f"rule-{prefix}-action-{eid}":
+                raw = event.value if isinstance(event.value, str) else ""
+                action_opts = _get_action_value_options(raw)
+                try:
+                    val_inp = self.query_one(f"#rule-{prefix}-value-{eid}", Input)
+                    val_sel = self.query_one(f"#rule-{prefix}-value-sel-{eid}", Select)
+                    if action_opts is not None:
+                        val_inp.add_class("hidden")
+                        val_sel.remove_class("hidden")
+                        val_sel.set_options([(lbl, v) for lbl, v in action_opts])
+                    else:
+                        val_inp.remove_class("hidden")
+                        val_sel.add_class("hidden")
+                except Exception:
+                    pass
+                break
 
 
 # ---------------------------------------------------------------------------
@@ -406,6 +451,10 @@ def _resolve_action(raw: str, value: str) -> str:
     """Convert internal action token + value to Tasmota command string."""
     if not raw:
         return ""
+    if raw.startswith("__RELAY_"):
+        n = raw.split("_")[-1]
+        cmd = value.upper() if value.upper() in ("ON", "OFF", "TOGGLE") else "OFF"
+        return f"Power{n} {cmd}"
     if raw.startswith("__DIMMER_"):
         try:
             pct = max(0, min(100, int(value)))
