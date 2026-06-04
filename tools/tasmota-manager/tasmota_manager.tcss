@@ -464,6 +464,27 @@ InteractiveBoardDiagram {
     margin: 0 0 1 0;
 }
 
+#mqtt-host-input {
+    width: 28;
+}
+
+#mqtt-port-input {
+    width: 8;
+}
+
+#mqtt-sub-topic-input {
+    width: 22;
+}
+
+#mqtt-connect-btn {
+    width: 16;
+}
+
+#mqtt-conn-status {
+    width: 1fr;
+    padding: 0 1;
+}
+
 #mqtt-main {
     layout: horizontal;
     height: 1fr;
