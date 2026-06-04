@@ -757,6 +757,11 @@ class BoardTab(TabPane):
             serial_bridge.clear_buffer()
             # Clear stale GPIO data immediately so UI doesn't show old Config-tab data
             self._gpio_assignments = {}
+            try:
+                diag: BoardDiagram = self.query_one("#board-diagram", BoardDiagram)
+                diag.set_gpio_functions({})
+            except Exception:
+                pass
             self._rebuild_outputs_panel()
             self._rebuild_pin_table()
 
