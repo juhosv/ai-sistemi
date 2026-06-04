@@ -754,10 +754,17 @@ class BoardTab(TabPane):
 
     async def _serial_state_monitor(self) -> None:
         """Real-time serial line monitor: apply POWER/Switch/Sensor state changes."""
+        import time as _time
         serial_bridge = self.app.serial_bridge  # type: ignore[attr-defined]
         _POWER_RE = re.compile(r"POWER(\d*)\s*=\s*(ON|OFF)", re.IGNORECASE)
         _RESULT_POWER_RE = re.compile(r'"POWER(\d*)"\s*:\s*"(ON|OFF)"', re.IGNORECASE)
         _SWITCH_RE = re.compile(r'"Switch(\d+)"\s*:\s*"(ON|OFF)"', re.IGNORECASE)
+
+        # Debounce: after a device-initiated POWER event (from a physical switch press),
+        # query Status 10 once so the switch GPIO's own state also refreshes.
+        # We only do this for TX-less events and at most once per 2 seconds.
+        _last_switch_poll: float = 0.0
+
         while True:
             try:
                 line = await asyncio.wait_for(serial_bridge.state_queue.get(), timeout=1.0)
@@ -767,28 +774,41 @@ class BoardTab(TabPane):
                 await asyncio.sleep(0.5)
                 continue
 
-            # Relay state: stat/.../POWER1 = ON
+            power_hit = False
+
+            # Relay state: stat/.../POWER1 = ON  (direct topic message)
             for m in _POWER_RE.finditer(line):
                 idx = int(m.group(1) or "1")
                 state = m.group(2).upper() == "ON"
                 gpio = self._find_gpio_for_relay(idx)
                 if gpio is not None:
                     self._set_pin(gpio, state)
+                    power_hit = True
 
-            # RESULT JSON: {"POWER1":"ON"} or {"Switch1":"ON"}
+            # RESULT JSON on serial: {"POWER1":"ON"} or {"Switch1":"ON"}
             for m in _RESULT_POWER_RE.finditer(line):
                 idx = int(m.group(1) or "1")
                 state = m.group(2).upper() == "ON"
                 gpio = self._find_gpio_for_relay(idx)
                 if gpio is not None:
                     self._set_pin(gpio, state)
+                    power_hit = True
 
+            # Switch state directly in serial (e.g. from tele/SENSOR with SwitchMode)
             for m in _SWITCH_RE.finditer(line):
                 inst = int(m.group(1))
                 state = m.group(2).upper() == "ON"
                 gpio = self._find_gpio_for_switch(inst)
                 if gpio is not None:
                     self._set_pin(gpio, state)
+
+            # After a POWER event, refresh switch physical states via Status 10
+            # (debounced: max once per 2 s so rapid button presses don't spam the device)
+            if power_hit and self._find_gpio_for_switch(1) is not None:
+                now = _time.monotonic()
+                if now - _last_switch_poll >= 2.0:
+                    _last_switch_poll = now
+                    serial_bridge.send("Status 10")
 
     async def _mqtt_state_listener(self) -> None:
         """Consume MQTT tele/STATE and tele/SENSOR messages."""

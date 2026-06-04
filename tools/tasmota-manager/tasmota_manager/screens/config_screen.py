@@ -106,23 +106,44 @@ def parse_status6(lines: list[str]) -> dict:
 
 def parse_ssids(lines: list[str]) -> dict:
     """
-    Parse Ssid1 / Ssid2 console command responses.
+    Parse Ssid1 / Ssid2 from several Tasmota response formats.
 
-    Tasmota returns individual JSON lines when you send 'Ssid1' / 'Ssid2':
-        {"Ssid1":"HomeNetwork"}
-        {"Ssid2":"BackupNet"}
+    Tasmota 15 returns:
+        {"SSId1":"HomeNetwork"}   ← note: capital SS, capital I
+        {"SSId2":"BackupNet"}
 
-    Also handles the case where Status 5 is the only WiFi source (active SSID).
+    Status 0 / Status 3 returns StatusLOG with SSId array:
+        {"StatusLOG": {"SSId": ["HomeNetwork", "BackupNet"], ...}}
+
+    Status 5 returns the ACTIVE connected SSID (StatusNET.SSId).
     """
     result: dict = {}
     for line in lines:
         data = _extract_json_block(line)
         if not data:
             continue
-        if "Ssid1" in data and data["Ssid1"]:
-            result["ssid1"] = data["Ssid1"]
-        if "Ssid2" in data:
-            result["ssid2"] = data["Ssid2"]  # may be empty string = not set
+
+        # Individual Ssid1/Ssid2 command responses – Tasmota 15 uses SSId1/SSId2
+        # Handle both cases (Ssid1 and SSId1) for forward/backward compatibility
+        for key in ("Ssid1", "SSId1"):
+            if key in data:
+                v = data[key]
+                if v:   # only store non-empty primary SSID
+                    result["ssid1"] = v
+        for key in ("Ssid2", "SSId2"):
+            if key in data:
+                result["ssid2"] = data[key]   # empty string = no backup configured
+
+        # StatusLOG.SSId array from Status 0 / Status 3
+        log_block = data.get("StatusLOG", {})
+        if isinstance(log_block, dict) and "SSId" in log_block:
+            ssid_arr = log_block["SSId"]
+            if isinstance(ssid_arr, list):
+                if len(ssid_arr) > 0 and ssid_arr[0]:
+                    result.setdefault("ssid1", ssid_arr[0])
+                if len(ssid_arr) > 1:
+                    result.setdefault("ssid2", ssid_arr[1])
+
     return result
 
 
@@ -929,7 +950,7 @@ class ConfigTab(TabPane):
             if s1.get("full_topic"):
                 self._set_input("#cfg-mqtt-fulltopic", s1["full_topic"])
                 filled.append("FullTopic")
-            if s1.get("module_type"):
+            if s1.get("module_type") is not None:   # Module 0 is valid (falsy in Python!)
                 try:
                     from tasmota_manager.board_layouts import TASMOTA_MODULE_TO_BOARD
                     mod_id = int(s1["module_type"])
