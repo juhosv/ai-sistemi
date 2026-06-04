@@ -175,8 +175,8 @@ def _parse_status10(lines: list[str]) -> dict:
 
 
 def _parse_status11(lines: list[str]) -> dict:
-    """StatusSTS → power states, uptime, WiFi signal."""
-    result: dict = {"power": {}, "uptime": "", "wifi_rssi": None}
+    """StatusSTS → power states, uptime, WiFi signal, PWM channels."""
+    result: dict = {"power": {}, "uptime": "", "wifi_rssi": None, "pwm": {}}
     for line in lines:
         if "StatusSTS" not in line:
             continue
@@ -191,6 +191,22 @@ def _parse_status11(lines: list[str]) -> dict:
             if m:
                 idx = int(m.group(1) or "1")
                 result["power"][idx] = (val == "ON")
+        # Channel array: [pct0, pct1, ...] – PWM duty cycle 0-100 per channel (1-indexed)
+        channels = sts.get("Channel")
+        if isinstance(channels, list):
+            for i, pct in enumerate(channels):
+                try:
+                    result["pwm"][i + 1] = int(pct)
+                except (TypeError, ValueError):
+                    pass
+        # Also accept individual Dimmer1, Dimmer2, ... keys
+        for key, val in sts.items():
+            m = re.match(r"Dimmer(\d+)$", key)
+            if m:
+                try:
+                    result["pwm"][int(m.group(1))] = int(val)
+                except (TypeError, ValueError):
+                    pass
         # Inline WiFi
         wifi = sts.get("Wifi", {})
         if isinstance(wifi, dict):
@@ -647,6 +663,7 @@ class BoardTab(TabPane):
 
         self._pin_table_keys: dict[int, str] = {}   # gpio_num → row_key
         self._outputs_signature: tuple = ()          # snapshot of current outputs structure
+        self._pwm_values: dict[int, int] = {}        # gpio_num → duty cycle 0-100
 
         table: DataTable = self.query_one("#board-pin-datatable")
         table.add_column("Pin",    key="pin")
@@ -907,6 +924,10 @@ class BoardTab(TabPane):
             gpio = self._find_gpio_for_relay(idx)
             if gpio is not None:
                 self._set_pin(gpio, state)
+        for inst, pct in data.get("pwm", {}).items():
+            gpio = self._find_gpio_for_type("pwm", inst)
+            if gpio is not None:
+                self._set_pwm_value(gpio, pct)
 
     # ------------------------------------------------------------------
     # Apply MQTT payloads
@@ -947,6 +968,16 @@ class BoardTab(TabPane):
                 )
             except Exception:
                 pass
+        # PWM Channel array: [pct0, pct1, ...] in tele/STATE
+        channels = payload.get("Channel")
+        if isinstance(channels, list):
+            for i, pct in enumerate(channels):
+                gpio = self._find_gpio_for_type("pwm", i + 1)
+                if gpio is not None:
+                    try:
+                        self._set_pwm_value(gpio, int(pct))
+                    except (TypeError, ValueError):
+                        pass
 
     def _apply_sensor(self, payload: object) -> None:
         if not isinstance(payload, dict):
@@ -979,6 +1010,26 @@ class BoardTab(TabPane):
             pass
         self._rebuild_pin_table()
         self._update_output_state_label(gpio)
+
+    def _set_pwm_value(self, gpio: int, pct: int) -> None:
+        """Store and display a PWM duty cycle value (0-100) for the given GPIO."""
+        self._pwm_values[gpio] = pct
+        try:
+            inp: Input = self.query_one(f"#bout_pwm_input_{gpio}", Input)
+            inp.value = str(pct)
+        except Exception:
+            pass
+        try:
+            lbl: Label = self.query_one(f"#bout_pwm_lbl_{gpio}", Label)
+            type_id = self._gpio_assignments.get(gpio, "pwm")
+            gt = GPIO_TYPE_BY_ID.get(type_id)
+            short = (gt.label if gt else "PWM").replace("PWM fényerő szabályozás", "PWM")
+            board = self._current_board
+            d_alias = board.gpio_to_dpin.get(gpio, "")
+            pin_name = f"{d_alias}/{gpio}" if d_alias else f"GPIO{gpio}"
+            lbl.update(f"{short}  [dim]({pin_name})[/dim]  [bold cyan]{pct}%[/bold cyan]")
+        except Exception:
+            pass
 
     def _find_gpio_for_relay(self, instance: int) -> Optional[int]:
         return self._find_gpio_for_type("relay", instance)
@@ -1170,11 +1221,16 @@ class BoardTab(TabPane):
                 row.compose_add_child(btn_toggle)
 
             elif type_id == "pwm":
+                current_pct = self._pwm_values.get(gpio)
+                pct_markup = (f"  [bold cyan]{current_pct}%[/bold cyan]"
+                              if current_pct is not None else "")
                 name_label = Label(
-                    f"{short} {inst}  [dim]({pin_name})[/dim]",
+                    f"{short} {inst}  [dim]({pin_name})[/dim]{pct_markup}",
                     classes="board-output-name",
+                    id=f"bout_pwm_lbl_{gpio}",
                 )
                 pwm_input = Input(
+                    value=str(current_pct) if current_pct is not None else "",
                     placeholder="0–100",
                     id=f"bout_pwm_input_{gpio}",
                     classes="board-output-pwm-input",
@@ -1252,6 +1308,8 @@ class BoardTab(TabPane):
                 v = max(0, min(100, int(value)))
                 cmd   = f"Dimmer{inst}"
                 payload = str(v)
+                # Optimistically update displayed value before device confirms
+                self._set_pwm_value(gpio, v)
             except Exception:
                 return
         else:
