@@ -1119,6 +1119,7 @@ class ConfigTab(TabPane):
         try:
             serial_bridge.comm.send_config_block(cmds)
             self.notify(f"{len(cmds)} parancs elküldve soros porton.", severity="information")
+            self.app.sync_gpio_to_board()  # type: ignore[attr-defined]
         except Exception as exc:
             self.notify(f"Hiba: {exc}", severity="error")
 
@@ -1137,6 +1138,7 @@ class ConfigTab(TabPane):
                 continue
             mqtt_topic = f"cmnd/{topic}/{cmd}"
             mqtt_mgr.publish(mqtt_topic, val)
+        self.app.sync_gpio_to_board()  # type: ignore[attr-defined]
         mqtt_mgr.publish(f"cmnd/{topic}/Restart", "1")
         self.notify(f"Konfig elküldve MQTT-n: cmnd/{topic}/…", severity="information")
 

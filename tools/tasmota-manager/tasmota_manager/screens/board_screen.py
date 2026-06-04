@@ -509,6 +509,12 @@ class BoardTab(TabPane):
 
     async def _poll_device(self) -> None:
         """Send Status 1/2/5/10/11 via serial and parse responses."""
+        # Sync GPIO assignments from Config tab before polling
+        try:
+            self.app.sync_gpio_to_board()  # type: ignore[attr-defined]
+        except Exception:
+            pass
+
         serial_bridge = self.app.serial_bridge  # type: ignore[attr-defined]
         if not serial_bridge.is_connected or self._polling:
             return

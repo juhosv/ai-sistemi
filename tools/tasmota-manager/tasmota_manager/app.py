@@ -80,6 +80,26 @@ class TasmoApp(App):
         self.sub_title = "ESP32 / ESP8266 eszközkezelő"
 
     # ------------------------------------------------------------------
+    # GPIO sync: Config tab → Board tab
+    # ------------------------------------------------------------------
+
+    def sync_gpio_to_board(self) -> None:
+        """Push current GPIO assignments from ConfigTab into BoardTab."""
+        try:
+            from tasmota_manager.screens.config_screen import ConfigTab
+            from tasmota_manager.screens.board_screen import BoardTab
+            cfg_tab: ConfigTab = self.query_one(ConfigTab)
+            board_tab: BoardTab = self.query_one(BoardTab)
+            board_tab.update_gpio_assignments(cfg_tab._get_gpio_assignments())
+        except Exception:
+            pass
+
+    def on_tabbed_content_tab_activated(self, event) -> None:  # type: ignore[override]
+        """Sync GPIO assignments whenever the Board tab becomes active."""
+        if getattr(event, "tab", None) and getattr(event.tab, "id", None) == "board":
+            self.sync_gpio_to_board()
+
+    # ------------------------------------------------------------------
     # Cross-tab sync: Config "Modul/Board" ↔ Board "Board" select
     # ------------------------------------------------------------------
 
