@@ -509,7 +509,7 @@ InteractiveBoardDiagram {
 #board-tab {
     padding: 1;
     layout: vertical;
-    overflow-y: auto;
+    height: 1fr;
 }
 
 #board-controls {
@@ -519,6 +519,33 @@ InteractiveBoardDiagram {
     margin: 0 0 1 0;
 }
 
+.board-uptime {
+    margin: 0 2;
+    color: $text-muted;
+}
+
+/* Main split: diagram left + info right */
+#board-main {
+    height: 1fr;
+    layout: horizontal;
+}
+
+#board-left-col {
+    width: 3fr;
+    height: 1fr;
+    padding: 0 1 0 0;
+    overflow-y: auto;
+    overflow-x: auto;
+}
+
+#board-right-col {
+    width: 2fr;
+    height: 1fr;
+    padding: 0 0 0 1;
+    overflow-y: auto;
+    border-left: solid $primary-darken-3;
+}
+
 #board-diagram {
     border: solid $primary-darken-2;
     margin: 0 0 1 0;
@@ -526,19 +553,36 @@ InteractiveBoardDiagram {
     height: auto;
 }
 
-#board-sensors {
-    border: solid $primary-darken-2;
-    margin: 0 0 1 0;
-    padding: 1;
-    height: auto;
-    min-height: 3;
-}
-
 #board-pin-table {
     height: auto;
-    max-height: 20;
     border: solid $primary-darken-2;
     margin: 0 0 1 0;
+}
+
+.board-pin-table {
+    height: auto;
+}
+
+/* Info panels in right column */
+.board-info-panel {
+    border: solid $primary-darken-2;
+    margin: 0 0 1 0;
+    padding: 0 1 1 1;
+    height: auto;
+}
+
+#board-device-panel Label,
+#board-wifi-panel Label,
+#board-sensor-panel Label {
+    padding: 0 0 0 1;
+    height: auto;
+}
+
+#board-sensor-values,
+#board-energy-values {
+    padding: 0 0 0 1;
+    height: auto;
+    white-space: pre;
 }
 
 /* ------------------------------------------------------------------ */
