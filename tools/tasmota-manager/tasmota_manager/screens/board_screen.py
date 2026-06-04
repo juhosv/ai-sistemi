@@ -563,6 +563,7 @@ class BoardTab(TabPane):
                     yield RadioButton("Serial", id="src-serial")
                 yield Label("", id="board-uptime-label", classes="board-uptime")
                 yield Button("↺ Lekérés", id="board-poll-btn", variant="primary")
+                yield Button("GPIO diagn.", id="board-gpio-diag-btn", variant="default")
 
             # --- Main area: diagram (left) + info panel (right) ---------
             with Horizontal(id="board-main"):
@@ -669,6 +670,8 @@ class BoardTab(TabPane):
         bid = event.button.id or ""
         if bid == "board-poll-btn":
             self.run_worker(self._poll_device(), name="board_manual_poll")
+        elif bid == "board-gpio-diag-btn":
+            self.run_worker(self._gpio_diagnostics(), name="board_gpio_diag")
         elif bid.startswith("bout_"):
             # Relay/LED: bout_{on|off|toggle}_{gpio}  e.g. bout_on_32
             # PWM:       bout_pwm_set_{gpio}
@@ -1252,6 +1255,34 @@ class BoardTab(TabPane):
         # For relay/LED commands: re-query Status 11 after short delay to confirm state
         if sent and cmd.startswith("POWER"):
             self.run_worker(self._verify_relay_state(), name="board_relay_verify")
+
+    async def _gpio_diagnostics(self) -> None:
+        """Send GPIO command and show raw response lines in a notification."""
+        serial_bridge = self.app.serial_bridge  # type: ignore[attr-defined]
+        if not serial_bridge.is_connected:
+            self.notify("Nincs soros port kapcsolat!", severity="warning")
+            return
+
+        serial_bridge.clear_buffer()
+        # Try both the bulk GPIO command and GPIO32 individually
+        serial_bridge.send("GPIO")
+        await asyncio.sleep(1.0)
+        serial_bridge.send("GPIO32")
+        await asyncio.sleep(0.5)
+
+        lines = list(serial_bridge.line_buffer)
+
+        # Collect lines that seem related to GPIO response
+        relevant = [l for l in lines if "GPIO" in l and l.startswith(">") is False]
+        if not relevant:
+            relevant = lines[-10:]  # show last 10 lines if nothing GPIO-specific
+
+        report = "\n".join(relevant[:8])  # max 8 lines in notification
+        self.notify(
+            f"GPIO parancs nyers válasz ({len(relevant)} sor):\n{report}",
+            severity="information",
+            timeout=30,
+        )
 
     async def _verify_relay_state(self) -> None:
         """Wait briefly then query Status 11 to confirm relay state changed."""
