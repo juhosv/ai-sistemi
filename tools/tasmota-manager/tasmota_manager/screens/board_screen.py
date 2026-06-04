@@ -1164,6 +1164,10 @@ class BoardTab(TabPane):
     def _set_pwm_value(self, gpio: int, pct: int) -> None:
         """Store and display a PWM duty cycle value (0-100) for the given GPIO."""
         self._pwm_values[gpio] = pct
+
+        # Update pin state (ON if duty > 0) so the pin table refreshes too
+        self._set_pin(gpio, pct > 0)
+
         try:
             inp: Input = self.query_one(f"#bout_pwm_input_{gpio}", Input)
             inp.value = str(pct)
@@ -1258,7 +1262,15 @@ class BoardTab(TabPane):
             if pin.boot_sensitive:
                 pin_label += " ⚠"
 
-            if state is True:
+            # For PWM pins show duty cycle percentage instead of plain ON/OFF
+            is_pwm = (type_id == "pwm")
+            if is_pwm and pin.gpio in self._pwm_values:
+                pct = self._pwm_values[pin.gpio]
+                if pct > 0:
+                    state_text = Text(f"■ {pct}%", style="bold cyan")
+                else:
+                    state_text = Text("□ 0%", style="dim")
+            elif state is True:
                 state_text = Text("■ ON",  style="bold green")
             elif state is False:
                 state_text = Text("□ OFF", style="dim")
