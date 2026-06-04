@@ -816,8 +816,19 @@ InteractiveBoardDiagram {
     margin-right: 1;
 }
 
+#rules-refresh-gpio-btn {
+    width: 18;
+    margin-right: 1;
+}
+
 #rules-fetch-btn {
-    width: 16;
+    width: 26;
+}
+
+#rules-gpio-hint {
+    height: 1;
+    color: $text-muted;
+    margin-bottom: 1;
 }
 
 #rules-cards-container {

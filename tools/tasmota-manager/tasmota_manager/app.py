@@ -177,10 +177,23 @@ class TasmoApp(App):
         if tab_id == "rules":
             try:
                 from tasmota_manager.screens.config_screen import ConfigTab
+                from tasmota_manager.screens.board_screen import BoardTab
                 from tasmota_manager.screens.rules_screen import RulesTab
-                cfg_tab: ConfigTab = self.query_one(ConfigTab)
                 rules_tab: RulesTab = self.query_one(RulesTab)
-                rules_tab.update_from_gpio(cfg_tab._get_gpio_assignments())
+                # Prefer Board tab assignments (device-fetched), fall back to Config tab
+                gpio: dict = {}
+                try:
+                    board_tab2: BoardTab = self.query_one(BoardTab)
+                    gpio = {k: v for k, v in board_tab2._gpio_assignments.items() if v and v != "none"}
+                except Exception:
+                    pass
+                if not gpio:
+                    try:
+                        cfg_tab2: ConfigTab = self.query_one(ConfigTab)
+                        gpio = cfg_tab2._get_gpio_assignments()
+                    except Exception:
+                        pass
+                rules_tab.update_from_gpio(gpio)
             except Exception:
                 pass
 

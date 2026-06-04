@@ -459,9 +459,17 @@ class RulesTab(TabPane):
                     value="1",
                     allow_blank=False,
                 )
-                yield Button("+ Szabály hozzáadása", id="rules-add-btn", variant="success")
-                yield Button("🗑 Mind törlése",       id="rules-clear-btn", variant="error")
-                yield Button("🔄 Lekérdezés",        id="rules-fetch-btn", variant="default")
+                yield Button("+ Szabály hozzáadása",  id="rules-add-btn",        variant="success")
+                yield Button("🗑 Mind törlése",        id="rules-clear-btn",       variant="error")
+                yield Button("⚙ GPIO frissítés",      id="rules-refresh-gpio-btn", variant="default")
+                yield Button("🔄 Lekérdezés eszközről", id="rules-fetch-btn",     variant="default")
+
+            # --- Info hint when no GPIO configured -------------------------
+            yield Label(
+                "ℹ Trigger és akció opciók a Config / Board lap GPIO kiosztásából töltődnek be.",
+                id="rules-gpio-hint",
+                classes="hint",
+            )
 
             # --- Card container --------------------------------------------
             with ScrollableContainer(id="rules-cards-container"):
@@ -515,6 +523,8 @@ class RulesTab(TabPane):
             self._add_card()
         elif bid == "rules-clear-btn":
             self._clear_all_cards()
+        elif bid == "rules-refresh-gpio-btn":
+            self._refresh_gpio_from_app()
         elif bid == "rules-fetch-btn":
             self.run_worker(self._fetch_rules(), name="rules_fetch")
         elif bid == "rules-send-serial-btn":
@@ -525,6 +535,34 @@ class RulesTab(TabPane):
                 self._remove_card(eid)
             except ValueError:
                 pass
+
+    def _refresh_gpio_from_app(self) -> None:
+        """Re-read GPIO assignments from Board/Config tab and update options."""
+        gpio: dict = {}
+        try:
+            from tasmota_manager.screens.board_screen import BoardTab
+            board_tab = self.app.query_one(BoardTab)  # type: ignore[attr-defined]
+            gpio = {k: v for k, v in board_tab._gpio_assignments.items() if v and v != "none"}
+        except Exception:
+            pass
+        if not gpio:
+            try:
+                from tasmota_manager.screens.config_screen import ConfigTab
+                cfg_tab = self.app.query_one(ConfigTab)  # type: ignore[attr-defined]
+                gpio = cfg_tab._get_gpio_assignments()
+            except Exception:
+                pass
+        self.update_from_gpio(gpio)
+        if gpio:
+            self.notify(
+                f"{len(gpio)} GPIO kiosztás betöltve (trigger/akció opciók frissítve).",
+                severity="information",
+            )
+        else:
+            self.notify(
+                "Nincs GPIO kiosztás. Állítsd be a Config lapon, vagy töltsd le az eszközről.",
+                severity="warning",
+            )
 
     # ------------------------------------------------------------------
     # Card management
