@@ -789,14 +789,14 @@ class RulesTab(TabPane):
         try:
             serial_bridge.clear_buffer()
             serial_bridge.send(f"Rule{rule_num}")
-            await asyncio.sleep(1.0)
+            await asyncio.sleep(1.5)       # allow time for response + board polling
             lines = list(serial_bridge.line_buffer)
             raw = _parse_rule_response(lines, rule_num)
             if raw:
                 preview = self.query_one("#rules-preview-area", TextArea)
-                preview.load_text(f"# Eszközről lekérdezett Rule{rule_num}:\n{raw}")
-                status_lbl.update("[green]● Lekérdezve[/green]")
-                self.notify(f"Rule{rule_num} lekérdezve – a nyers szöveg az előnézetben látható.", severity="information")
+                preview.load_text(raw)
+                status_lbl.update(f"[green]● Rule{rule_num} lekérdezve[/green]")
+                self.notify(f"Rule{rule_num} lekérdezve az eszközről.", severity="information")
             else:
                 status_lbl.update("[dim]Nincs adat[/dim]")
                 self.notify(f"Rule{rule_num} üres vagy nem érkezett válasz.", severity="warning")
@@ -809,23 +809,57 @@ class RulesTab(TabPane):
 # ---------------------------------------------------------------------------
 
 def _parse_rule_response(lines: list[str], rule_num: int) -> str:
-    """Extract raw Rule string from device response lines."""
-    key = f'"Rules"'
+    """Extract raw Rule string from device response lines.
+
+    Tasmota 15 returns:
+        {"Rule1":{"State":"ON","Once":"OFF","StopOnError":"OFF",
+                  "Length":79,"Free":432,
+                  "Rules":"ON Switch2#State=1 DO ... ENDON"}}
+    We search for lines that contain "Rule<n>" AND "Rules", then parse
+    the first valid JSON block we can construct from the line.
+    """
+    import json, re
+
+    rkey_outer = f'"Rule{rule_num}"'   # e.g. '"Rule1"'
+    rkey_rules = '"Rules"'
+
     for line in lines:
-        if key not in line:
+        line = line.strip()
+        if rkey_outer not in line and rkey_rules not in line:
             continue
-        # Try to find the Rules value in JSON
+
+        # Locate the first '{' that starts the JSON payload.
+        # Tasmota MQT lines look like:  "... RESULT = {...}"
+        eq_pos = line.rfind("= {")
+        if eq_pos >= 0:
+            json_start = eq_pos + 2   # points to '{'
+        else:
+            json_start = line.find("{")
+        if json_start < 0:
+            continue
+
+        json_str = line[json_start:].strip()
+        # Remove trailing non-JSON chars (\r, \n, extra space)
+        json_str = json_str.rstrip()
+
         try:
-            import json
-            start = line.find("{")
-            if start < 0:
-                continue
-            data = json.loads(line[start:line.rfind("}") + 1])
-            rules_val = data.get("Rules") or data.get(f"Rule{rule_num}", {}).get("Rules", "")
+            data = json.loads(json_str)
+            # Nested: {"Rule1": {"Rules": "..."}}
+            nested = data.get(f"Rule{rule_num}")
+            if isinstance(nested, dict):
+                rules_val = nested.get("Rules", "")
+                if rules_val:
+                    return str(rules_val)
+            # Flat: {"Rules": "..."}
+            rules_val = data.get("Rules", "")
             if rules_val:
                 return str(rules_val)
-        except Exception:
-            pass
-        # Fallback: return the raw line
-        return line.strip()
+        except json.JSONDecodeError:
+            # Try to extract just the Rules string value with regex
+            m = re.search(r'"Rules"\s*:\s*"(.*?)"(?:\s*[,}])', json_str)
+            if m:
+                return m.group(1)
+            # Last resort: return the raw JSON fragment
+            return json_str
+
     return ""
