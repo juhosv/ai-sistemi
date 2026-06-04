@@ -645,8 +645,15 @@ class BoardTab(TabPane):
         self._polling             = False
         self._outputs_build_ver   = 0
 
+        self._pin_table_keys: dict[int, str] = {}   # gpio_num → row_key
+        self._outputs_signature: tuple = ()          # snapshot of current outputs structure
+
         table: DataTable = self.query_one("#board-pin-datatable")
-        table.add_columns("Pin", "GPIO", "Funkció", "Irány", "Állapot")
+        table.add_column("Pin",    key="pin")
+        table.add_column("GPIO",   key="gpio")
+        table.add_column("Funkció",key="func")
+        table.add_column("Irány",  key="dir")
+        table.add_column("Állapot",key="state")
         self._rebuild_pin_table()
         self._rebuild_outputs_panel()
 
@@ -665,6 +672,7 @@ class BoardTab(TabPane):
             diag: BoardDiagram = self.query_one("#board-diagram", BoardDiagram)
             diag.set_layout(board)
             diag.set_gpio_functions(self._gpio_assignments)
+            self._pin_table_keys = {}   # board changed – force full pin table rebuild
             self._rebuild_pin_table()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -711,6 +719,7 @@ class BoardTab(TabPane):
                     self._current_board = BOARD_BY_NAME[board_name]
                     diag: BoardDiagram = self.query_one("#board-diagram", BoardDiagram)
                     diag.set_layout(self._current_board)
+                    self._pin_table_keys = {}   # board changed – force full pin table rebuild
                     self._rebuild_pin_table()
             await asyncio.sleep(1.0)
 
@@ -759,15 +768,6 @@ class BoardTab(TabPane):
         btn.label = "Lekérés…"
         try:
             serial_bridge.clear_buffer()
-            # Clear stale GPIO data immediately so UI doesn't show old Config-tab data
-            self._gpio_assignments = {}
-            try:
-                diag: BoardDiagram = self.query_one("#board-diagram", BoardDiagram)
-                diag.set_gpio_functions({})
-            except Exception:
-                pass
-            self._rebuild_outputs_panel()
-            self._rebuild_pin_table()
 
             # Phase 1: standard Status queries
             for cmd, delay in [
@@ -1025,20 +1025,32 @@ class BoardTab(TabPane):
     # ------------------------------------------------------------------
 
     def _rebuild_pin_table(self) -> None:
+        """Rebuild pin table in-place: add/update rows without flickering clear()."""
         try:
             table: DataTable = self.query_one("#board-pin-datatable")
         except Exception:
             return
-        table.clear()
         board = self._current_board
-        instances = compute_gpio_instances(self._gpio_assignments)
+
+        current_gpios = {
+            pin.gpio for pin in board.pins if pin.gpio is not None
+        }
+
+        # Remove rows for GPIOs no longer on this board
+        for gpio in list(self._pin_table_keys):
+            if gpio not in current_gpios:
+                try:
+                    table.remove_row(self._pin_table_keys.pop(gpio))
+                except Exception:
+                    pass
 
         for pin in sorted(board.pins, key=lambda p: (p.side, p.row)):
             if pin.gpio is None:
                 continue
-            type_id  = self._gpio_assignments.get(pin.gpio)
-            gt       = GPIO_TYPE_BY_ID.get(type_id or "none")
-            func_lbl = gt.label if (gt and type_id and type_id != "none") else "—"
+
+            type_id   = self._gpio_assignments.get(pin.gpio)
+            gt        = GPIO_TYPE_BY_ID.get(type_id or "none")
+            func_lbl  = gt.label if (gt and type_id and type_id != "none") else "—"
             direction = gt.direction if (gt and type_id and type_id != "none") else "–"
 
             state = self._pin_states.get(pin.gpio)
@@ -1054,17 +1066,56 @@ class BoardTab(TabPane):
             else:
                 state_text = Text("–",     style="dim")
 
-            table.add_row(pin_label, f"GPIO{pin.gpio}", func_lbl, direction, state_text)
+            row_key = f"gpio{pin.gpio}"
+            if pin.gpio not in self._pin_table_keys:
+                # New row – add it
+                table.add_row(pin_label, f"GPIO{pin.gpio}", func_lbl, direction,
+                              state_text, key=row_key)
+                self._pin_table_keys[pin.gpio] = row_key
+            else:
+                # Existing row – update cells in-place (no flicker)
+                try:
+                    table.update_cell(row_key, "func",  func_lbl,  update_width=False)
+                    table.update_cell(row_key, "dir",   direction, update_width=False)
+                    table.update_cell(row_key, "state", state_text,update_width=False)
+                except Exception:
+                    pass
 
     # ------------------------------------------------------------------
     # Outputs panel – dynamic command buttons
     # ------------------------------------------------------------------
 
     def _rebuild_outputs_panel(self) -> None:
-        """Rebuild the output control buttons from current GPIO assignments."""
+        """Rebuild output controls, or just refresh state labels if structure unchanged."""
+        # Compute the current outputs signature (sorted list of (gpio, type_id))
+        new_sig: tuple = tuple(
+            (gpio, t)
+            for gpio in sorted(self._gpio_assignments)
+            if (t := self._gpio_assignments[gpio]) in _OUTPUT_CMD
+        )
+
+        if new_sig == self._outputs_signature:
+            # Structure unchanged – only update state labels in-place
+            for gpio, type_id, _ in self._outputs_from_signature(new_sig):
+                if type_id in ("relay", "led"):
+                    self._update_output_state_label(gpio)
+            return
+
+        # Structure changed – full rebuild
+        self._outputs_signature = new_sig
         self._outputs_build_ver += 1
         ver = self._outputs_build_ver
         self.call_after_refresh(self._do_rebuild_outputs, ver)
+
+    @staticmethod
+    def _outputs_from_signature(sig: tuple) -> list[tuple[int, str, int]]:
+        """Convert signature to (gpio, type_id, instance_num) list."""
+        result = []
+        counters: dict[str, int] = {}
+        for gpio, type_id in sig:
+            counters[type_id] = counters.get(type_id, 0) + 1
+            result.append((gpio, type_id, counters[type_id]))
+        return result
 
     def _do_rebuild_outputs(self, ver: int) -> None:
         if ver != self._outputs_build_ver:
@@ -1078,14 +1129,7 @@ class BoardTab(TabPane):
         for child in list(container.children):
             child.remove()
 
-        # Collect commandable outputs: (gpio, type_id, instance_num)
-        outputs: list[tuple[int, str, int]] = []
-        type_counters: dict[str, int] = {}
-        for gpio in sorted(self._gpio_assignments):
-            t = self._gpio_assignments[gpio]
-            if t in _OUTPUT_CMD:
-                type_counters[t] = type_counters.get(t, 0) + 1
-                outputs.append((gpio, t, type_counters[t]))
+        outputs = self._outputs_from_signature(self._outputs_signature)
 
         if not outputs:
             container.mount(Label("[dim]Nincs konfigurált kimenet[/dim]",
@@ -1095,12 +1139,10 @@ class BoardTab(TabPane):
         for gpio, type_id, inst in outputs:
             gt = GPIO_TYPE_BY_ID.get(type_id)
             label_text = gt.label if gt else type_id
-            # Short label
             short = (label_text
                      .replace("Relé / Kapcsoló kimenet", "Relé")
                      .replace("PWM fényerő szabályozás", "PWM")
                      .replace("Beépített státusz LED", "LED"))
-            inst_lbl = instance_label(type_id, inst)
             board = self._current_board
             d_alias = board.gpio_to_dpin.get(gpio, "")
             pin_name = f"{d_alias}/{gpio}" if d_alias else f"GPIO{gpio}"

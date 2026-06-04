@@ -611,7 +611,7 @@ InteractiveBoardDiagram {
 }
 
 .board-output-pwm-input {
-    width: 8;
+    width: 16;
     height: 3;
     margin: 0 1 0 0;
 }
