@@ -573,6 +573,7 @@ InteractiveBoardDiagram {
 
 #board-device-panel Label,
 #board-wifi-panel Label,
+#board-mqtt-panel Label,
 #board-sensor-panel Label {
     padding: 0 0 0 1;
     height: auto;
@@ -582,6 +583,42 @@ InteractiveBoardDiagram {
 #board-energy-values {
     padding: 0 0 0 1;
     height: auto;
+}
+
+/* Output command rows */
+#board-outputs-container {
+    height: auto;
+    padding: 0 0 0 1;
+}
+
+.board-output-row {
+    height: auto;
+    align: left middle;
+    margin: 0 0 1 0;
+    padding: 0;
+}
+
+.board-output-name {
+    width: 1fr;
+    height: auto;
+    padding: 0 1 0 0;
+}
+
+.board-output-btn {
+    min-width: 8;
+    height: 3;
+    margin: 0 1 0 0;
+}
+
+.board-output-pwm-input {
+    width: 8;
+    height: 3;
+    margin: 0 1 0 0;
+}
+
+.board-output-empty {
+    padding: 0 0 0 1;
+    color: $text-muted;
 }
 
 /* ------------------------------------------------------------------ */

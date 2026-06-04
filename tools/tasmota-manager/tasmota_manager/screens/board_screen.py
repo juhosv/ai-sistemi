@@ -22,6 +22,8 @@ from textual.widgets import (
     TabPane,
 )
 
+from textual.widgets import Input
+
 from tasmota_manager.board_layouts import (
     ALL_BOARDS,
     BOARD_BY_NAME,
@@ -34,8 +36,16 @@ from tasmota_manager.config_builder import (
     GPIO_TYPE_BY_ID,
     assign_tasmota_codes,
     compute_gpio_instances,
+    instance_label,
 )
 from tasmota_manager.utils import rssi_to_bars, rssi_label
+
+# Commandable output type_ids and their Tasmota command prefix
+_OUTPUT_CMD: dict[str, str] = {
+    "relay": "POWER",
+    "pwm":   "Dimmer",
+    "led":   "POWER",
+}
 
 # ---------------------------------------------------------------------------
 # Reverse mapping: Tasmota numeric code → type_id
@@ -510,6 +520,11 @@ class BoardTab(TabPane):
                         yield Label("", id="board-mqtt-client")
                         yield Label("", id="board-mqtt-count")
 
+                    # --- Outputs / command panel ------------------------
+                    with Vertical(id="board-outputs-panel", classes="board-info-panel"):
+                        yield Static("Kimenetek – vezérlés", classes="section-title")
+                        yield Vertical(id="board-outputs-container")
+
                     # --- Sensor / Power ---------------------------------
                     with Vertical(id="board-sensor-panel", classes="board-info-panel"):
                         yield Static("Szenzor / Energiafogyasztás", classes="section-title")
@@ -540,12 +555,14 @@ class BoardTab(TabPane):
         self._mqtt_count       = 0
         self._sensor_data      = {}
         self._energy_data      = {}
-        self._uptime           = ""
-        self._polling          = False
+        self._uptime              = ""
+        self._polling             = False
+        self._outputs_build_ver   = 0
 
         table: DataTable = self.query_one("#board-pin-datatable")
         table.add_columns("Pin", "GPIO", "Funkció", "Irány", "Állapot")
         self._rebuild_pin_table()
+        self._rebuild_outputs_panel()
 
         self.run_worker(self._mqtt_state_listener(), exclusive=True,  name="board_mqtt")
         self.run_worker(self._auto_poll_serial(),    exclusive=True,  name="board_serial_poll")
@@ -565,8 +582,26 @@ class BoardTab(TabPane):
             self._rebuild_pin_table()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id == "board-poll-btn":
+        bid = event.button.id or ""
+        if bid == "board-poll-btn":
             self.run_worker(self._poll_device(), name="board_manual_poll")
+        elif bid.startswith("bout_"):
+            # Relay/LED: bout_{on|off|toggle}_{gpio}  e.g. bout_on_32
+            # PWM:       bout_pwm_set_{gpio}
+            if bid.startswith("bout_pwm_set_"):
+                gpio_str = bid[len("bout_pwm_set_"):]
+                try:
+                    self._send_output_command(int(gpio_str), "pwm_set")
+                except ValueError:
+                    pass
+            else:
+                parts = bid.split("_", 2)
+                if len(parts) == 3:
+                    action, gpio_str = parts[1], parts[2]
+                    try:
+                        self._send_output_command(int(gpio_str), action)
+                    except ValueError:
+                        pass
 
     # ------------------------------------------------------------------
     # Background workers
@@ -670,6 +705,7 @@ class BoardTab(TabPane):
                 except Exception:
                     pass
                 self._rebuild_pin_table()
+                self._rebuild_outputs_panel()
         except Exception:
             pass
         finally:
@@ -812,6 +848,7 @@ class BoardTab(TabPane):
         except Exception:
             pass
         self._rebuild_pin_table()
+        self._update_output_state_label(gpio)
 
     def _find_gpio_for_relay(self, instance: int) -> Optional[int]:
         return self._find_gpio_for_type("relay", instance)
@@ -840,6 +877,7 @@ class BoardTab(TabPane):
         except Exception:
             pass
         self._rebuild_pin_table()
+        self._rebuild_outputs_panel()
 
     # ------------------------------------------------------------------
     # Pin table rebuild
@@ -876,6 +914,197 @@ class BoardTab(TabPane):
                 state_text = Text("–",     style="dim")
 
             table.add_row(pin_label, f"GPIO{pin.gpio}", func_lbl, direction, state_text)
+
+    # ------------------------------------------------------------------
+    # Outputs panel – dynamic command buttons
+    # ------------------------------------------------------------------
+
+    def _rebuild_outputs_panel(self) -> None:
+        """Rebuild the output control buttons from current GPIO assignments."""
+        self._outputs_build_ver += 1
+        ver = self._outputs_build_ver
+        self.call_after_refresh(self._do_rebuild_outputs, ver)
+
+    def _do_rebuild_outputs(self, ver: int) -> None:
+        if ver != self._outputs_build_ver:
+            return
+        try:
+            container = self.query_one("#board-outputs-container", Vertical)
+        except Exception:
+            return
+
+        # Remove old rows
+        for child in list(container.children):
+            child.remove()
+
+        # Collect commandable outputs: (gpio, type_id, instance_num)
+        outputs: list[tuple[int, str, int]] = []
+        type_counters: dict[str, int] = {}
+        for gpio in sorted(self._gpio_assignments):
+            t = self._gpio_assignments[gpio]
+            if t in _OUTPUT_CMD:
+                type_counters[t] = type_counters.get(t, 0) + 1
+                outputs.append((gpio, t, type_counters[t]))
+
+        if not outputs:
+            container.mount(Label("[dim]Nincs konfigurált kimenet[/dim]",
+                                  classes="board-output-empty"))
+            return
+
+        for gpio, type_id, inst in outputs:
+            gt = GPIO_TYPE_BY_ID.get(type_id)
+            label_text = gt.label if gt else type_id
+            # Short label
+            short = (label_text
+                     .replace("Relé / Kapcsoló kimenet", "Relé")
+                     .replace("PWM fényerő szabályozás", "PWM")
+                     .replace("Beépített státusz LED", "LED"))
+            inst_lbl = instance_label(type_id, inst)
+            board = self._current_board
+            d_alias = board.gpio_to_dpin.get(gpio, "")
+            pin_name = f"{d_alias}/{gpio}" if d_alias else f"GPIO{gpio}"
+
+            state = self._pin_states.get(gpio)
+            if state is True:
+                state_markup = "[bold green]■ ON [/bold green]"
+            elif state is False:
+                state_markup = "[dim]□ OFF[/dim]"
+            else:
+                state_markup = "[dim]  –  [/dim]"
+
+            row = Horizontal(classes="board-output-row")
+
+            if type_id in ("relay", "led"):
+                name_label = Label(
+                    f"{short} {inst}  [dim]({pin_name})[/dim]  {state_markup}",
+                    classes="board-output-name",
+                    id=f"bout_state_lbl_{gpio}",
+                )
+                btn_on     = Button("BE",     id=f"bout_on_{gpio}",     variant="success", classes="board-output-btn")
+                btn_off    = Button("KI",     id=f"bout_off_{gpio}",    variant="error",   classes="board-output-btn")
+                btn_toggle = Button("VÁLTÁS", id=f"bout_toggle_{gpio}", variant="default", classes="board-output-btn")
+                row.compose_add_child(name_label)
+                row.compose_add_child(btn_on)
+                row.compose_add_child(btn_off)
+                row.compose_add_child(btn_toggle)
+
+            elif type_id == "pwm":
+                name_label = Label(
+                    f"{short} {inst}  [dim]({pin_name})[/dim]",
+                    classes="board-output-name",
+                )
+                pwm_input = Input(
+                    placeholder="0–100",
+                    id=f"bout_pwm_input_{gpio}",
+                    classes="board-output-pwm-input",
+                )
+                btn_set = Button("Beállít", id=f"bout_pwm_set_{gpio}", variant="primary", classes="board-output-btn")
+                row.compose_add_child(name_label)
+                row.compose_add_child(pwm_input)
+                row.compose_add_child(btn_set)
+
+            container.mount(row)
+
+    def _update_output_state_label(self, gpio: int) -> None:
+        """Refresh the state markup in an output row label after state change."""
+        try:
+            lbl: Label = self.query_one(f"#bout_state_lbl_{gpio}", Label)
+        except Exception:
+            return
+        type_id = self._gpio_assignments.get(gpio, "")
+        state = self._pin_states.get(gpio)
+        gt = GPIO_TYPE_BY_ID.get(type_id)
+        label_text = (gt.label if gt else type_id)
+        short = (label_text
+                 .replace("Relé / Kapcsoló kimenet", "Relé")
+                 .replace("Beépített státusz LED", "LED"))
+        # Count instance number
+        inst = 1
+        cnt = 0
+        for g in sorted(self._gpio_assignments):
+            if self._gpio_assignments[g] == type_id:
+                cnt += 1
+                if g == gpio:
+                    inst = cnt
+                    break
+        board = self._current_board
+        d_alias = board.gpio_to_dpin.get(gpio, "")
+        pin_name = f"{d_alias}/{gpio}" if d_alias else f"GPIO{gpio}"
+        if state is True:
+            state_markup = "[bold green]■ ON [/bold green]"
+        elif state is False:
+            state_markup = "[dim]□ OFF[/dim]"
+        else:
+            state_markup = "[dim]  –  [/dim]"
+        lbl.update(f"{short} {inst}  [dim]({pin_name})[/dim]  {state_markup}")
+
+    # ------------------------------------------------------------------
+    # Send output command (serial or MQTT)
+    # ------------------------------------------------------------------
+
+    def _send_output_command(self, gpio: int, action: str) -> None:
+        """Send a relay/PWM command via serial or MQTT."""
+        type_id = self._gpio_assignments.get(gpio)
+        if not type_id or type_id not in _OUTPUT_CMD:
+            return
+
+        cmd_prefix = _OUTPUT_CMD[type_id]
+
+        # Compute instance number for this gpio
+        inst = 1
+        cnt = 0
+        for g in sorted(self._gpio_assignments):
+            if self._gpio_assignments[g] == type_id:
+                cnt += 1
+                if g == gpio:
+                    inst = cnt
+                    break
+
+        # Handle PWM set (action = "pwm_set_{gpio}")
+        if action == "pwm_set":
+            try:
+                inp: Input = self.query_one(f"#bout_pwm_input_{gpio}", Input)
+                value = inp.value.strip()
+                if not value.isdigit():
+                    self.notify("Érvénytelen PWM érték (0–100)!", severity="warning")
+                    return
+                v = max(0, min(100, int(value)))
+                cmd   = f"Dimmer{inst}"
+                payload = str(v)
+            except Exception:
+                return
+        else:
+            action_map = {"on": "ON", "off": "OFF", "toggle": "TOGGLE"}
+            payload = action_map.get(action)
+            if not payload:
+                return
+            cmd = f"{cmd_prefix}{inst}"
+
+        self._dispatch_command(cmd, payload)
+
+    def _dispatch_command(self, cmd: str, value: str) -> None:
+        """Route command to serial or MQTT based on the source radio."""
+        try:
+            rs: RadioSet = self.query_one("#board-source-radio")
+            use_serial = (rs.pressed_index == 1)
+        except Exception:
+            use_serial = True
+
+        if not use_serial:
+            mqtt_mgr = self.app.mqtt_manager  # type: ignore[attr-defined]
+            topic = self._dev_topic
+            if mqtt_mgr.connected and topic:
+                mqtt_mgr.publish(f"cmnd/{topic}/{cmd}", value)
+                self.notify(f"MQTT → {cmd} {value}", severity="information")
+                return
+            # Fall through to serial if MQTT not connected
+
+        serial_bridge = self.app.serial_bridge  # type: ignore[attr-defined]
+        if serial_bridge.is_connected:
+            serial_bridge.send(f"{cmd} {value}")
+            self.notify(f"Serial → {cmd} {value}", severity="information")
+        else:
+            self.notify("Nincs kapcsolat!", severity="warning")
 
     # ------------------------------------------------------------------
     # UI panel updates
