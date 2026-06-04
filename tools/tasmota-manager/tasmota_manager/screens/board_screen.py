@@ -264,21 +264,103 @@ def _parse_status6(lines: list[str]) -> dict:
     return result
 
 
+def _name_to_type(name: str) -> Optional[str]:
+    """
+    Map a Tasmota GPIO function name to our type_id.
+    e.g. 'Relay1', 'Relay2 (22)' → 'relay'
+         'Switch1 (160)'         → 'switch'
+    """
+    n = name.lower()
+    if "relay" in n:       return "relay"
+    if "switch" in n:      return "switch"
+    if "button" in n:      return "button"
+    if "counter" in n:     return "counter"
+    if "pwm" in n:         return "pwm"
+    if "ledlink" in n:     return "led"
+    if "led" in n:         return "led"
+    if "am2301" in n or "dht22" in n: return "dht22"
+    if "dht11" in n:       return "dht11"
+    if "ds18" in n:        return "ds18b20"
+    if "i2c" in n and "scl" in n: return "i2c_scl"
+    if "i2c" in n and "sda" in n: return "i2c_sda"
+    return None
+
+
+def _to_type(val: object) -> Optional[str]:
+    """
+    Resolve a Tasmota GPIO value (int code or name string) to our type_id.
+
+    Tasmota returns values in multiple formats depending on version:
+      - Integer:          21                    (numeric code)
+      - String with code: "Relay1 (21)"         (name + code in parens)
+      - String only:      "Relay1"              (name, no code)
+      - "None (0)":       unassigned pin        → skip
+    """
+    if isinstance(val, int):
+        if val == 0:
+            return None
+        return _TASMOTA_CODE_TO_TYPE.get(val)
+
+    if isinstance(val, str):
+        # Try to extract numeric code from parentheses first
+        m = re.search(r"\((\d+)\)", val)
+        if m:
+            code = int(m.group(1))
+            if code == 0:
+                return None
+            t = _TASMOTA_CODE_TO_TYPE.get(code)
+            if t and t != "none":
+                return t
+        # Fallback: name-based resolution
+        return _name_to_type(val)
+
+    return None
+
+
 def _parse_gpio_from_device(lines: list[str]) -> dict[int, str]:
     """
-    Parse GPIO assignments from Tasmota serial/MQTT responses.
+    Parse GPIO assignments from Tasmota serial responses.
 
-    Priority order:
-    1. Status 13  → {"StatusGPIO":{"GPIO0":0,"GPIO4":160,"GPIO12":21,...}}
-       This is the most reliable source (Tasmota 12+).
-    2. Individual GPIO query  → {"GPIO4":160} (sent per-pin, not used currently)
+    Handles all known Tasmota response formats:
 
-    Returns {gpio_num: type_id} using the reverse code table.
-    Only non-zero (assigned) GPIOs are included.
+    A. Bulk GPIO command (``GPIO`` without argument) – preferred:
+       {"GPIO":{"0":"None (0)","32":"Relay1 (21)","33":"Relay2 (22)"}}
+       Values are strings with optional "(code)" suffix.
+
+    B. StatusGPIO (Status 13, Tasmota 12+):
+       {"StatusGPIO":{"GPIO0":0,"GPIO32":21}}
+       Values are numeric codes; keys are "GPIO<n>".
+
+    C. Individual GPIOx query (``GPIO32``):
+       {"GPIO32":"Relay1 (21)"}  or  {"GPIO32":21}
+       One key per response line.
+
+    Returns {gpio_num: type_id}, only non-None (assigned) pins.
     """
     result: dict[int, str] = {}
 
-    # --- Strategy 1: Status 13 → StatusGPIO ----------------------------
+    # --- A: bulk GPIO response {"GPIO":{"32":"Relay1 (21)",...}} ---------
+    for line in lines:
+        if '"GPIO"' not in line:
+            continue
+        data = _extract_json(line)
+        if not data or "GPIO" not in data:
+            continue
+        gpio_map = data["GPIO"]
+        if not isinstance(gpio_map, dict):
+            continue
+        for key, val in gpio_map.items():
+            try:
+                gpio_num = int(key)
+            except (ValueError, TypeError):
+                continue
+            t = _to_type(val)
+            if t and t != "none":
+                result[gpio_num] = t
+        if result:
+            return result   # clean bulk response – done
+
+    # --- B: StatusGPIO {"StatusGPIO":{"GPIO0":0,"GPIO32":21}} -----------
     for line in lines:
         if "StatusGPIO" not in line:
             continue
@@ -289,21 +371,16 @@ def _parse_gpio_from_device(lines: list[str]) -> dict[int, str]:
         if not isinstance(gpio_map, dict):
             continue
         for key, val in gpio_map.items():
-            # Keys like "GPIO0", "GPIO4", ...
             m = re.match(r"GPIO(\d+)$", key)
             if not m:
                 continue
-            gpio_num = int(m.group(1))
-            code = _to_code(val)
-            if code and code != 0:
-                type_id = _TASMOTA_CODE_TO_TYPE.get(code)
-                if type_id and type_id != "none":
-                    result[gpio_num] = type_id
+            t = _to_type(val)
+            if t and t != "none":
+                result[int(m.group(1))] = t
         if result:
-            return result   # got valid data from Status 13 – done
+            return result
 
-    # --- Strategy 2: individual {"GPIOx": code} lines ------------------
-    # These come from querying `GPIO 4`, `GPIO 12`, etc.
+    # --- C: individual {"GPIO32":"Relay1 (21)"} lines -------------------
     for line in lines:
         if '"GPIO' not in line:
             continue
@@ -314,29 +391,11 @@ def _parse_gpio_from_device(lines: list[str]) -> dict[int, str]:
             m = re.match(r"GPIO(\d+)$", key)
             if not m:
                 continue
-            gpio_num = int(m.group(1))
-            code = _to_code(val)
-            if code and code != 0:
-                type_id = _TASMOTA_CODE_TO_TYPE.get(code)
-                if type_id and type_id != "none":
-                    result[gpio_num] = type_id
+            t = _to_type(val)
+            if t and t != "none":
+                result[int(m.group(1))] = t
 
     return result
-
-
-def _to_code(val: object) -> Optional[int]:
-    """Convert a Tasmota GPIO value (int or 'Relay1 (21)' string) to numeric code."""
-    if isinstance(val, int):
-        return val
-    if isinstance(val, str):
-        m = re.search(r"\((\d+)\)", val)
-        if m:
-            return int(m.group(1))
-        try:
-            return int(val)
-        except (ValueError, TypeError):
-            pass
-    return None
 
 
 # ---------------------------------------------------------------------------
@@ -712,17 +771,12 @@ class BoardTab(TabPane):
                 serial_bridge.send(cmd)
                 await asyncio.sleep(delay)
 
-            # Phase 2: individual GPIOx queries for all board pins
-            # This works on ALL Tasmota versions (Status 13 is not standard).
-            board_gpio_nums = [
-                pin.gpio for pin in self._current_board.pins
-                if pin.gpio is not None and not pin.is_power and not pin.is_uart
-            ]
+            # Phase 2: bulk GPIO assignment query
+            # "GPIO" (no argument) returns all current GPIO assignments at once.
+            # Falls back to individual GPIOx queries if bulk returns nothing.
             btn.label = "GPIO…"
-            for gpio_num in board_gpio_nums:
-                serial_bridge.send(f"GPIO{gpio_num}")
-                await asyncio.sleep(0.08)   # 80 ms per pin
-            await asyncio.sleep(0.5)   # settle
+            serial_bridge.send("GPIO")
+            await asyncio.sleep(0.8)   # wait for bulk response
 
             lines = list(serial_bridge.line_buffer)
             self._apply_status1(_parse_status1(lines))
@@ -737,16 +791,42 @@ class BoardTab(TabPane):
             gpio_from_device = _parse_gpio_from_device(lines)
             if gpio_from_device:
                 self.update_gpio_assignments(gpio_from_device, from_device=True)
+                summary = ", ".join(
+                    f"GPIO{g}={t}" for g, t in sorted(gpio_from_device.items())
+                )
                 self.notify(
-                    f"GPIO kiosztás az eszközről: {len(gpio_from_device)} pin",
-                    severity="information", timeout=3,
+                    f"GPIO az eszközről ({len(gpio_from_device)} pin): {summary}",
+                    severity="information", timeout=5,
                 )
             else:
-                self.notify(
-                    "Nincs konfigurált GPIO az eszközön "
-                    f"({len(board_gpio_nums)} pin lekérdezve)",
-                    severity="information", timeout=4,
-                )
+                # Fallback: individual GPIOx queries for each board pin
+                btn.label = "GPIO…"
+                board_gpio_nums = [
+                    pin.gpio for pin in self._current_board.pins
+                    if pin.gpio is not None and not pin.is_power and not pin.is_uart
+                ]
+                serial_bridge.clear_buffer()
+                for gpio_num in board_gpio_nums:
+                    serial_bridge.send(f"GPIO{gpio_num}")
+                    await asyncio.sleep(0.1)
+                await asyncio.sleep(0.5)
+                lines2 = list(serial_bridge.line_buffer)
+                gpio_from_device2 = _parse_gpio_from_device(lines2)
+                if gpio_from_device2:
+                    self.update_gpio_assignments(gpio_from_device2, from_device=True)
+                    summary = ", ".join(
+                        f"GPIO{g}={t}" for g, t in sorted(gpio_from_device2.items())
+                    )
+                    self.notify(
+                        f"GPIO az eszközről ({len(gpio_from_device2)} pin): {summary}",
+                        severity="information", timeout=5,
+                    )
+                else:
+                    self.notify(
+                        "Nincs konfigurált GPIO az eszközön\n"
+                        "Ellenőrizd a Serial tabban: GPIO parancs eredménye",
+                        severity="warning", timeout=6,
+                    )
         except Exception:
             pass
         finally:
