@@ -949,3 +949,22 @@ InteractiveBoardDiagram {
     margin-top: 1;
     height: auto;
 }
+
+#rules-fetched-header {
+    height: 3;
+    align: left middle;
+}
+
+#rules-fetched-title {
+    width: 1fr;
+    height: 3;
+    content-align: left middle;
+    background: $primary-darken-2;
+    color: $text;
+    padding: 0 1;
+}
+
+.rules-edit-fetched-btn {
+    width: 18;
+    margin-left: 1;
+}

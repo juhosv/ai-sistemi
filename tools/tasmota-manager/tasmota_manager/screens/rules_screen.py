@@ -556,6 +556,7 @@ class RulesTab(TabPane):
             ("MQTT Publish",        "__PUBLISH"),
         ]
         self._fetched_rule_text: str = ""   # shown in separate panel, not overwritten by timer
+        self._fetched_rule_num: int = 1
 
     def compose(self) -> ComposeResult:
         with Vertical(id="rules-tab"):
@@ -609,7 +610,11 @@ class RulesTab(TabPane):
 
             # --- Fetched rule panel (only visible after fetch) ---------------
             with Vertical(id="rules-fetched-panel", classes="hidden"):
-                yield Static("Eszközről lekérdezett Rule", classes="section-title")
+                with Horizontal(id="rules-fetched-header"):
+                    yield Static("Eszközről lekérdezett Rule", id="rules-fetched-title",
+                                 classes="section-title")
+                    yield Button("✏ Szerkesztés", id="rules-edit-fetched-btn",
+                                 classes="rules-edit-fetched-btn", variant="warning")
                 yield TextArea(
                     "",
                     id="rules-fetched-area",
@@ -652,6 +657,8 @@ class RulesTab(TabPane):
             self.run_worker(self._fetch_rules(), name="rules_fetch")
         elif bid == "rules-send-serial-btn":
             self.run_worker(self._send_rules(), name="rules_send")
+        elif bid == "rules-edit-fetched-btn":
+            self._load_fetched_into_cards()
         elif bid.startswith("rule-del-"):
             try:
                 eid = int(bid.split("-")[-1])
@@ -686,6 +693,111 @@ class RulesTab(TabPane):
                 "Nincs GPIO kiosztás. Állítsd be a Config lapon, vagy töltsd le az eszközről.",
                 severity="warning",
             )
+
+    def _load_fetched_into_cards(self) -> None:
+        """Parse the fetched rule string and load it into editable cards."""
+        if not self._fetched_rule_text:
+            return
+        entries = _parse_rule_string(self._fetched_rule_text)
+        if not entries:
+            self.notify("Nem sikerült a rule-t szerkeszthetővé alakítani (komplex szintaxis).",
+                        severity="warning")
+            return
+        # Set Rule selector to match fetched rule number
+        try:
+            self.query_one("#rules-rule-select", Select).value = str(self._fetched_rule_num)
+        except Exception:
+            pass
+        # Clear existing cards and load parsed entries
+        self._clear_all_cards()
+        for entry in entries:
+            self._add_card_from_entry(entry)
+        self.notify(f"{len(entries)} szabály betöltve szerkesztésre.", severity="information")
+
+    def _add_card_from_entry(self, entry: RuleEntry) -> None:
+        """Create a card and pre-fill it from a RuleEntry."""
+        eid = self._next_id
+        self._next_id += 1
+        card = RuleCard(eid, id=f"rule-card-{eid}", classes="rule-card")
+        card.update_options(self._trigger_options, self._action_options)
+        self._cards.append(card)
+        container = self.query_one("#rules-cards-container")
+        try:
+            self.query_one("#rules-empty-hint").add_class("hidden")
+        except Exception:
+            pass
+        container.mount(card)
+        # Pre-fill the card after mount (widgets exist in DOM)
+        self.set_timer(0.05, lambda e=entry, c=card: self._fill_card(c, e))
+
+    def _fill_card(self, card: RuleCard, entry: RuleEntry) -> None:
+        """Fill card widgets with values from a RuleEntry."""
+        eid = card.entry_id
+        try:
+            # Trigger source
+            src_sel = card.query_one(f"#rule-trigger-src-{eid}", Select)
+            src_sel.value = entry.trigger_source
+            # Operator
+            card.query_one(f"#rule-trigger-op-{eid}", Select).value = entry.operator
+            # Trigger value – determine if discrete or free
+            preset = _get_trigger_value_options(entry.trigger_source)
+            if preset and not _trigger_needs_value(entry.trigger_source):
+                pass  # no value needed
+            elif preset:
+                val_sel = card.query_one(f"#rule-trigger-val-sel-{eid}", Select)
+                val_sel.set_options([(lbl, v) for lbl, v in preset])
+                val_sel.value = entry.trigger_value
+                val_sel.remove_class("hidden")
+                card.query_one(f"#rule-trigger-val-{eid}", Input).add_class("hidden")
+            else:
+                inp = card.query_one(f"#rule-trigger-val-{eid}", Input)
+                inp.value = entry.trigger_value
+                inp.remove_class("hidden")
+
+            # THEN action
+            self._fill_action(card, "then", entry.then_action)
+
+            # ELSE action
+            if entry.else_action:
+                else_row = card.query_one(f"#rule-else-row-{eid}")
+                else_row.remove_class("hidden")
+                try:
+                    btn = card.query_one(f"#rule-toggle-else-{eid}", Button)
+                    btn.label = "− EGYÉBKÉNT ág eltávolítása"
+                    btn.variant = "warning"
+                except Exception:
+                    pass
+                self._fill_action(card, "else", entry.else_action)
+        except Exception:
+            pass
+
+    def _fill_action(self, card: RuleCard, prefix: str, action_str: str) -> None:
+        """Fill an action row (then/else) from a resolved Tasmota command string."""
+        eid = card.entry_id
+        # Try to match known patterns back to tokens
+        token, val = _action_str_to_token(action_str, self._action_options)
+        if not token:
+            return
+        try:
+            act_sel = card.query_one(f"#rule-{prefix}-action-{eid}", Select)
+            act_sel.value = token
+            action_opts = _get_action_value_options(token)
+            if action_opts:
+                val_sel = card.query_one(f"#rule-{prefix}-value-sel-{eid}", Select)
+                val_sel.set_options([(lbl, v) for lbl, v in action_opts])
+                val_sel.value = val.upper() if val else "OFF"
+                val_sel.remove_class("hidden")
+                card.query_one(f"#rule-{prefix}-value-{eid}", Input).add_class("hidden")
+            else:
+                inp = card.query_one(f"#rule-{prefix}-value-{eid}", Input)
+                inp.value = val
+                inp.remove_class("hidden")
+                try:
+                    card.query_one(f"#rule-{prefix}-value-sel-{eid}", Select).add_class("hidden")
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     # Card management
@@ -806,8 +918,12 @@ class RulesTab(TabPane):
             raw = _parse_rule_response(lines, rule_num)
             if raw:
                 self._fetched_rule_text = raw
+                self._fetched_rule_num  = rule_num
                 fetched_area = self.query_one("#rules-fetched-area", TextArea)
                 fetched_area.load_text(raw)
+                self.query_one("#rules-fetched-title", Static).update(
+                    f"Eszközről lekérdezett Rule{rule_num}"
+                )
                 self.query_one("#rules-fetched-panel").remove_class("hidden")
                 status_lbl.update(f"[green]● Rule{rule_num} lekérdezve[/green]")
                 self.notify(f"Rule{rule_num} lekérdezve az eszközről.", severity="information")
@@ -877,3 +993,94 @@ def _parse_rule_response(lines: list[str], rule_num: int) -> str:
             return json_str
 
     return ""
+
+
+# ---------------------------------------------------------------------------
+# Rule string → RuleEntry parser  (best-effort for common patterns)
+# ---------------------------------------------------------------------------
+
+def _parse_rule_string(rule_str: str) -> list[RuleEntry]:
+    """Parse a Tasmota rule string into a list of RuleEntry objects.
+
+    Handles:
+      ON trigger DO cmd ENDON
+      ON trigger DO IF (cond) cmd1 ELSE cmd2 ENDIF ENDON
+    Returns an empty list if the syntax is too complex to parse.
+    """
+    entries: list[RuleEntry] = []
+    rule_str = rule_str.strip()
+
+    # Find all ON...ENDON blocks (case-insensitive, lazy match)
+    blocks = re.findall(r'ON\s+(\S+)\s+DO\s+(.*?)\s+ENDON', rule_str, re.IGNORECASE | re.DOTALL)
+    for i, (trigger_full, do_block) in enumerate(blocks, 1):
+        trigger_full = trigger_full.strip()
+        do_block     = do_block.strip()
+
+        # --- Parse trigger --------------------------------------------------
+        m_trig = re.match(r'^([A-Za-z0-9_.#]+?)([><=!]+)(.+)$', trigger_full)
+        if m_trig:
+            trigger_src = m_trig.group(1)
+            operator    = m_trig.group(2)
+            trigger_val = m_trig.group(3)
+        else:
+            trigger_src = trigger_full
+            operator    = "="
+            trigger_val = ""
+
+        # --- Parse action block -------------------------------------------
+        m_if = re.match(
+            r'IF\s+\([^)]*\)\s+(.+?)\s+ELSE\s+(.+?)\s+ENDIF',
+            do_block, re.IGNORECASE | re.DOTALL
+        )
+        if m_if:
+            then_cmd = m_if.group(1).strip()
+            else_cmd = m_if.group(2).strip()
+        else:
+            then_cmd = do_block
+            else_cmd = ""
+
+        entries.append(RuleEntry(
+            entry_id       = i,
+            trigger_source = trigger_src,
+            has_value      = bool(trigger_val),
+            operator       = operator,
+            trigger_value  = trigger_val,
+            then_action    = then_cmd,
+            else_action    = else_cmd,
+        ))
+
+    return entries
+
+
+def _action_str_to_token(action_str: str,
+                          action_options: list[tuple[str, str]]) -> tuple[str, str]:
+    """Convert a resolved Tasmota command string back to (token, value)."""
+    action_str = action_str.strip()
+
+    m = re.match(r'Power(\d+)\s+(ON|OFF|TOGGLE)', action_str, re.IGNORECASE)
+    if m:
+        return f"__RELAY_{m.group(1)}", m.group(2).upper()
+
+    m = re.match(r'Dimmer\s+(\d+)', action_str, re.IGNORECASE)
+    if m:
+        for _, tok in action_options:
+            if tok.startswith("__DIMMER_"):
+                return tok, m.group(1)
+        return "__DIMMER_1", m.group(1)
+
+    m = re.match(r'PWM(\d+)\s+(\d+)', action_str, re.IGNORECASE)
+    if m:
+        return f"__PWM_{m.group(1)}", m.group(2)
+
+    m = re.match(r'Delay\s+(\d+)', action_str, re.IGNORECASE)
+    if m:
+        return "__DELAY", m.group(1)
+
+    m = re.match(r'RuleTimer\d+\s+(\d+)', action_str, re.IGNORECASE)
+    if m:
+        return "__TIMER", m.group(1)
+
+    if action_str.lower().startswith("publish"):
+        return "__PUBLISH", action_str[7:].strip()
+
+    return "", ""
