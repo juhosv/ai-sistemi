@@ -783,18 +783,30 @@ class BoardTab(TabPane):
                 gpio = self._find_gpio_for_relay(idx)
                 if gpio is not None:
                     self._set_pin(gpio, state)
-                    power_hit = True
+                # When a POWER{n} changes, Switch{n} controlling it also toggled.
+                # Optimistically flip the switch GPIO state for immediate UI feedback;
+                # a debounced Status 10 query will confirm the real physical state.
+                sw_gpio = self._find_gpio_for_switch(idx)
+                if sw_gpio is not None:
+                    current = self._pin_states.get(sw_gpio)
+                    self._set_pin(sw_gpio, not current if current is not None else True)
+                power_hit = True
 
             # RESULT JSON on serial: {"POWER1":"ON"} or {"Switch1":"ON"}
-            for m in _RESULT_POWER_RE.finditer(line):
-                idx = int(m.group(1) or "1")
-                state = m.group(2).upper() == "ON"
-                gpio = self._find_gpio_for_relay(idx)
-                if gpio is not None:
-                    self._set_pin(gpio, state)
-                    power_hit = True
+            # Skip STATUS11 lines – they also contain "POWER1":"ON" but are periodic
+            # poll responses, not device-initiated events; we don't want to trigger
+            # a Switch flip or a Status 10 query for those.
+            if "STATUS11" not in line and "StatusSTS" not in line:
+                for m in _RESULT_POWER_RE.finditer(line):
+                    idx = int(m.group(1) or "1")
+                    state = m.group(2).upper() == "ON"
+                    gpio = self._find_gpio_for_relay(idx)
+                    if gpio is not None:
+                        self._set_pin(gpio, state)
+                        power_hit = True
+                    # Flip is done by the direct POWER topic handler above.
 
-            # Switch state directly in serial (e.g. from tele/SENSOR with SwitchMode)
+            # Switch state directly in serial (e.g. from tele/SENSOR or STATUS10)
             for m in _SWITCH_RE.finditer(line):
                 inst = int(m.group(1))
                 state = m.group(2).upper() == "ON"
@@ -802,11 +814,11 @@ class BoardTab(TabPane):
                 if gpio is not None:
                     self._set_pin(gpio, state)
 
-            # After a POWER event, refresh switch physical states via Status 10
-            # (debounced: max once per 2 s so rapid button presses don't spam the device)
+            # After a POWER event, send Status 10 to confirm the actual switch states
+            # (debounced: max once per second to avoid spamming the device)
             if power_hit and self._find_gpio_for_switch(1) is not None:
                 now = _time.monotonic()
-                if now - _last_switch_poll >= 2.0:
+                if now - _last_switch_poll >= 1.0:
                     _last_switch_poll = now
                     serial_bridge.send("Status 10")
 
