@@ -672,7 +672,6 @@ class BoardTab(TabPane):
             diag: BoardDiagram = self.query_one("#board-diagram", BoardDiagram)
             diag.set_layout(board)
             diag.set_gpio_functions(self._gpio_assignments)
-            self._pin_table_keys = {}   # board changed – force full pin table rebuild
             self._rebuild_pin_table()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -719,7 +718,6 @@ class BoardTab(TabPane):
                     self._current_board = BOARD_BY_NAME[board_name]
                     diag: BoardDiagram = self.query_one("#board-diagram", BoardDiagram)
                     diag.set_layout(self._current_board)
-                    self._pin_table_keys = {}   # board changed – force full pin table rebuild
                     self._rebuild_pin_table()
             await asyncio.sleep(1.0)
 
