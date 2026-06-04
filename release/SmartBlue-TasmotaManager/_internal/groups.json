@@ -1,0 +1,14 @@
+{
+  "regions": [
+    {
+      "id": "demo_region123456",
+      "name": "Demo régió",
+      "users": [
+        {
+          "id": "demo_user_123456",
+          "name": "Demo felhasználó"
+        }
+      ]
+    }
+  ]
+}

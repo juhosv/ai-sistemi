@@ -1,0 +1,29 @@
+{
+  "device_name": "proba_juhosv_123",
+  "topic": "proba_juhosv_123",
+  "wifi": {
+    "ssid1": "",
+    "password1": "",
+    "ssid2": "TP-Viktor",
+    "password2": ""
+  },
+  "mqtt": {
+    "host": "broker.emqx.io",
+    "port": 1883,
+    "user": "",
+    "password": "",
+    "topic": "proba_juhosv_123",
+    "full_topic": "%prefix%/%topic%/"
+  },
+  "tele_period": 300,
+  "module_type": "ESP32 DevKit V1",
+  "gpio": {
+    "12": "button",
+    "18": "relay",
+    "19": "counter",
+    "21": "switch",
+    "27": "button",
+    "32": "relay",
+    "33": "pwm"
+  }
+}
