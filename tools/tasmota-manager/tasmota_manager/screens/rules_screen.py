@@ -577,7 +577,13 @@ class RulesTab(TabPane):
                 yield Button("⚙ GPIO frissítés",      id="rules-refresh-gpio-btn", variant="default")
                 yield Button("🔄 Lekérdezés eszközről", id="rules-fetch-btn",     variant="default")
 
-            # --- Info hint when no GPIO configured -------------------------
+            # --- Info hints ------------------------------------------------
+            yield Label(
+                "ℹ A Tasmota 5 Rule slotot támogat (Rule1–Rule5). "
+                "Válaszd ki, melyikbe kerüljön a szabály.",
+                id="rules-slot-hint",
+                classes="hint",
+            )
             yield Label(
                 "ℹ Trigger és akció opciók a Config / Board lap GPIO kiosztásából töltődnek be.",
                 id="rules-gpio-hint",
@@ -629,6 +635,11 @@ class RulesTab(TabPane):
 
     def on_mount(self) -> None:
         self.set_interval(0.5, self._refresh_preview)
+        self.set_timer(0.1, self._update_slot_buttons)
+
+    def on_select_changed(self, event: Select.Changed) -> None:
+        if event.select.id == "rules-rule-select":
+            self._update_slot_buttons()
 
     # ------------------------------------------------------------------
     # Public: called by app when tab is activated
@@ -665,6 +676,18 @@ class RulesTab(TabPane):
                 self._remove_card(eid)
             except ValueError:
                 pass
+
+    def _update_slot_buttons(self) -> None:
+        """Update send/fetch button labels to show the selected Rule slot number."""
+        n = self._get_rule_num()
+        try:
+            self.query_one("#rules-send-serial-btn", Button).label = f"📡 Küldés → Rule{n}"
+        except Exception:
+            pass
+        try:
+            self.query_one("#rules-fetch-btn", Button).label = f"🔄 Lekérdezés ← Rule{n}"
+        except Exception:
+            pass
 
     def _refresh_gpio_from_app(self) -> None:
         """Re-read GPIO assignments from Board/Config tab and update options."""
