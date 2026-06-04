@@ -339,61 +339,62 @@ def _parse_gpio_from_device(lines: list[str]) -> dict[int, str]:
     """
     result: dict[int, str] = {}
 
-    # --- A: bulk GPIO response {"GPIO":{"32":"Relay1 (21)",...}} ---------
-    for line in lines:
-        if '"GPIO"' not in line:
-            continue
-        data = _extract_json(line)
-        if not data or "GPIO" not in data:
-            continue
-        gpio_map = data["GPIO"]
-        if not isinstance(gpio_map, dict):
-            continue
-        for key, val in gpio_map.items():
-            try:
-                gpio_num = int(key)
-            except (ValueError, TypeError):
-                continue
-            t = _to_type(val)
-            if t and t != "none":
-                result[gpio_num] = t
-        if result:
-            return result   # clean bulk response – done
+    # Tasmota 15 returns GPIO assignments in top-level keys like:
+    #   "GPIO32":{"None":0}        → unassigned
+    #   "GPIO32":{"Relay1":21}     → Relay1, code 21
+    #   "GPIO12":{"Button10":41}   → Button10, code 41
+    # This format appears in RESULT responses to GPIO / GPIOx commands,
+    # as well as the older formats below.
 
-    # --- B: StatusGPIO {"StatusGPIO":{"GPIO0":0,"GPIO32":21}} -----------
-    for line in lines:
-        if "StatusGPIO" not in line:
-            continue
-        data = _extract_json(line)
-        if not data:
-            continue
-        gpio_map = data.get("StatusGPIO", {})
-        if not isinstance(gpio_map, dict):
-            continue
-        for key, val in gpio_map.items():
-            m = re.match(r"GPIO(\d+)$", key)
-            if not m:
-                continue
-            t = _to_type(val)
-            if t and t != "none":
-                result[int(m.group(1))] = t
-        if result:
-            return result
-
-    # --- C: individual {"GPIO32":"Relay1 (21)"} lines -------------------
     for line in lines:
         if '"GPIO' not in line:
             continue
         data = _extract_json(line)
         if not isinstance(data, dict):
             continue
+
+        # --- A: Tasmota 15 style: top-level "GPIO<n>": {"FuncName": code} ----
+        # Also handles old-style top-level "GPIO<n>": code  (int or string)
         for key, val in data.items():
             m = re.match(r"GPIO(\d+)$", key)
             if not m:
                 continue
-            t = _to_type(val)
-            if t and t != "none":
-                result[int(m.group(1))] = t
+            gpio_num = int(m.group(1))
+
+            if isinstance(val, dict):
+                # New format: {"Relay1": 21} or {"None": 0}
+                for func_name, code in val.items():
+                    if func_name == "None" or code == 0:
+                        continue
+                    t = _to_type(code) or _name_to_type(func_name)
+                    if t and t != "none":
+                        result[gpio_num] = t
+            else:
+                # Old format: integer code or "Relay1 (21)" string
+                t = _to_type(val)
+                if t and t != "none":
+                    result[gpio_num] = t
+
+        # --- B: Bulk old-style {"GPIO": {"32": "Relay1 (21)", ...}} ----------
+        if "GPIO" in data and isinstance(data["GPIO"], dict):
+            for key, val in data["GPIO"].items():
+                try:
+                    gpio_num = int(key)
+                except (ValueError, TypeError):
+                    continue
+                t = _to_type(val)
+                if t and t != "none":
+                    result[gpio_num] = t
+
+        # --- C: StatusGPIO {"StatusGPIO": {"GPIO32": 21, ...}} ---------------
+        if "StatusGPIO" in data and isinstance(data["StatusGPIO"], dict):
+            for key, val in data["StatusGPIO"].items():
+                m2 = re.match(r"GPIO(\d+)$", key)
+                if not m2:
+                    continue
+                t = _to_type(val)
+                if t and t != "none":
+                    result[int(m2.group(1))] = t
 
     return result
 

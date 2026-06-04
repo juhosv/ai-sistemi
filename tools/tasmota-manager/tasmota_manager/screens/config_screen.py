@@ -1117,15 +1117,15 @@ class ConfigTab(TabPane):
         cfg = self._build_config()
         cmds = cfg.to_tasmota_commands()   # list of (cmd, val) tuples
 
-        # Split into two phases to avoid overflowing Tasmota's ~256-byte serial buffer.
+        # CRITICAL: Tasmota restarts the device immediately when a Module command
+        # is processed – even inside a Backlog.  Any commands after Module in the
+        # same Backlog are lost.
         #
-        # Phase 1 – WiFi / MQTT / TelePeriod – sent individually (safe, no restart risk)
-        # Phase 2 – Module + GPIO + Restart  – sent as a short Backlog0 so that the
-        #            Module command cannot trigger an early restart before GPIO commands
-        #            are processed (Backlog0 delays the restart until the last item).
-
-        _GPIO_PREFIXES = ("GPIO",)
-        _SKIP_SOLO     = {"Module", "Restart"}
+        # Strategy:
+        #   Phase 1 – WiFi / MQTT / TelePeriod  → sent individually (no restart)
+        #   Phase 2 – Module only (if needed)   → triggers device restart
+        #             We wait ~6 s for the device to come back up.
+        #   Phase 3 – GPIO + Restart             → sent as Backlog0 after reboot
 
         phase1: list[str] = []
         module_cmd: str   = ""
@@ -1138,30 +1138,57 @@ class ConfigTab(TabPane):
             elif cmd.startswith("GPIO"):
                 gpio_cmds.append(full)
             elif cmd == "Restart":
-                pass   # handled in phase 2
+                pass   # handled below
             else:
                 phase1.append(full)
 
-        # Phase 2: short Backlog0 – only Module + GPIO + Restart
-        backlog_parts: list[str] = []
-        if module_cmd:
-            backlog_parts.append(module_cmd)
-        backlog_parts.extend(gpio_cmds)
-        backlog_parts.append("Restart 1")
-        backlog_cmd = "Backlog0 " + "; ".join(backlog_parts)
+        # Build GPIO + Restart as a short Backlog0 (no Module here!)
+        gpio_backlog: str = ""
+        if gpio_cmds:
+            gpio_backlog = "Backlog0 " + "; ".join(gpio_cmds) + "; Restart 1"
+
+        self.app.run_worker(  # type: ignore[attr-defined]
+            self._do_send_serial(
+                serial_bridge, phase1, module_cmd, gpio_backlog, len(gpio_cmds)
+            ),
+            exclusive=False,
+        )
+
+    async def _do_send_serial(
+        self,
+        serial_bridge,
+        phase1: list[str],
+        module_cmd: str,
+        gpio_backlog: str,
+        gpio_count: int,
+    ) -> None:
+        """Async worker: sends config in phases, waiting for reboot if Module changes."""
+        import asyncio as _asyncio
 
         try:
-            # Phase 1: send WiFi / MQTT / general settings individually
+            # Phase 1: WiFi / MQTT / general settings individually
             if phase1:
                 serial_bridge.comm.send_config_block(phase1, delay=0.2)
+                await _asyncio.sleep(0.5)
 
-            # Phase 2: atomic Module + GPIO + Restart
-            serial_bridge.send(backlog_cmd)
+            # Phase 2: Module (if needed) – triggers reboot, wait for device to come back
+            if module_cmd:
+                serial_bridge.send(module_cmd)
+                self.notify(
+                    "Module parancs elküldve – várakozás az újraindulásra (6 mp)…",
+                    severity="information",
+                    timeout=8,
+                )
+                await _asyncio.sleep(6.0)   # give device time to reboot
 
-            gpio_count = len(gpio_cmds)
+            # Phase 3: GPIO + Restart (Backlog0, no Module inside)
+            if gpio_backlog:
+                serial_bridge.send(gpio_backlog)
+
             self.notify(
-                f"Konfig elküldve: {len(phase1)} alap parancs + "
-                f"Backlog({gpio_count} GPIO + Module + Restart)",
+                f"Konfig elküldve: {len(phase1)} alap parancs"
+                + (f" + Module" if module_cmd else "")
+                + (f" + {gpio_count} GPIO + Restart" if gpio_backlog else ""),
                 severity="information",
             )
             self.app.sync_gpio_to_board()  # type: ignore[attr-defined]
