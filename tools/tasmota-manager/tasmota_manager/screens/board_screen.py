@@ -683,12 +683,6 @@ class BoardTab(TabPane):
 
     async def _poll_device(self) -> None:
         """Send Status 1/2/5/10/11/13 via serial and parse responses."""
-        # Sync GPIO assignments from Config tab before polling
-        try:
-            self.app.sync_gpio_to_board()  # type: ignore[attr-defined]
-        except Exception:
-            pass
-
         serial_bridge = self.app.serial_bridge  # type: ignore[attr-defined]
         if self._polling:
             return
@@ -702,19 +696,22 @@ class BoardTab(TabPane):
         btn.label = "Lekérés…"
         try:
             serial_bridge.clear_buffer()
+            # Reset device info so stale data doesn't remain from previous session
+            self._gpio_assignments = {}
+
             for cmd, delay in [
-                ("Status 1",  0.4),   # topic, hostname
-                ("Status 2",  0.4),   # firmware, hardware
-                ("Status 4",  0.4),   # memory / heap
-                ("Status 5",  0.5),   # WiFi IP/SSID/RSSI
-                ("Status 6",  0.4),   # MQTT broker info
-                ("Status 10", 0.5),   # sensors + energy
-                ("Status 11", 0.5),   # GPIO states, uptime
-                ("Status 13", 0.5),   # GPIO assignments from device (Tasmota 12+)
+                ("Status 1",  0.5),   # topic, hostname
+                ("Status 2",  0.5),   # firmware, hardware
+                ("Status 4",  0.5),   # memory / heap
+                ("Status 5",  0.6),   # WiFi IP/SSID/RSSI
+                ("Status 6",  0.5),   # MQTT broker info
+                ("Status 10", 0.6),   # sensors + energy
+                ("Status 11", 0.6),   # GPIO states, uptime
+                ("Status 13", 0.8),   # GPIO assignments (Tasmota 12+)
             ]:
                 serial_bridge.send(cmd)
                 await asyncio.sleep(delay)
-            await asyncio.sleep(0.3)
+            await asyncio.sleep(0.5)   # extra settle time
 
             lines = list(serial_bridge.line_buffer)
             self._apply_status1(_parse_status1(lines))
@@ -724,17 +721,24 @@ class BoardTab(TabPane):
             self._apply_status6(_parse_status6(lines))
             self._apply_status10(_parse_status10(lines))
             self._apply_status11(_parse_status11(lines))
-            # GPIO assignments from device (Status 13) override Config tab
+
+            # GPIO assignments from device (Status 13)
             gpio_from_device = _parse_gpio_from_device(lines)
             if gpio_from_device:
-                self._gpio_assignments = gpio_from_device
-                try:
-                    diag: BoardDiagram = self.query_one("#board-diagram", BoardDiagram)
-                    diag.set_gpio_functions(gpio_from_device)
-                except Exception:
-                    pass
-                self._rebuild_pin_table()
-                self._rebuild_outputs_panel()
+                self.update_gpio_assignments(gpio_from_device, from_device=True)
+                self.notify(
+                    f"GPIO kiosztás az eszközről: {len(gpio_from_device)} pin",
+                    severity="information", timeout=3,
+                )
+            else:
+                # Status 13 returned nothing – show diagnostic info
+                s13_lines = [l for l in lines if "StatusGPIO" in l or "Status" in l]
+                hint = f"({len(s13_lines)} státusz sor az eszköztől)" if s13_lines else "(nincs státusz sor)"
+                self.notify(
+                    f"GPIO kiosztás nem érkezett az eszköztől {hint}\n"
+                    "Ellenőrizd: Status 13 a Serial tabban",
+                    severity="warning", timeout=8,
+                )
         except Exception:
             pass
         finally:
@@ -898,7 +902,16 @@ class BoardTab(TabPane):
     # GPIO assignments sync (called from app)
     # ------------------------------------------------------------------
 
-    def update_gpio_assignments(self, assignments: dict[int, str]) -> None:
+    def update_gpio_assignments(self, assignments: dict[int, str],
+                                from_device: bool = False) -> None:
+        """Update GPIO assignments.
+
+        from_device=True  → always apply (device is authoritative).
+        from_device=False → only apply if no device data has been loaded yet,
+                            so a previous Status 13 result is not overwritten.
+        """
+        if not from_device and self._gpio_assignments:
+            return   # device data already present – don't overwrite with Config tab data
         self._gpio_assignments = assignments
         try:
             diag: BoardDiagram = self.query_one("#board-diagram", BoardDiagram)

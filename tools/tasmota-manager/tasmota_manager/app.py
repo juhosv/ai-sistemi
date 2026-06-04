@@ -84,20 +84,28 @@ class TasmoApp(App):
     # ------------------------------------------------------------------
 
     def sync_gpio_to_board(self) -> None:
-        """Push current GPIO assignments from ConfigTab into BoardTab."""
+        """Push GPIO assignments from ConfigTab into BoardTab (only if no device data yet)."""
         try:
             from tasmota_manager.screens.config_screen import ConfigTab
             from tasmota_manager.screens.board_screen import BoardTab
             cfg_tab: ConfigTab = self.query_one(ConfigTab)
             board_tab: BoardTab = self.query_one(BoardTab)
-            board_tab.update_gpio_assignments(cfg_tab._get_gpio_assignments())
+            board_tab.update_gpio_assignments(cfg_tab._get_gpio_assignments(),
+                                              from_device=False)
         except Exception:
             pass
 
     def on_tabbed_content_tab_activated(self, event) -> None:  # type: ignore[override]
-        """Sync GPIO assignments whenever the Board tab becomes active."""
+        """When Board tab opens: only pre-fill GPIO from Config if board has none yet."""
         if getattr(event, "tab", None) and getattr(event.tab, "id", None) == "board":
-            self.sync_gpio_to_board()
+            try:
+                from tasmota_manager.screens.board_screen import BoardTab
+                board_tab: BoardTab = self.query_one(BoardTab)
+                # Only copy from Config if no device data has been loaded yet
+                if not board_tab._gpio_assignments:
+                    self.sync_gpio_to_board()
+            except Exception:
+                pass
 
     # ------------------------------------------------------------------
     # Cross-tab sync: Config "Modul/Board" ↔ Board "Board" select
