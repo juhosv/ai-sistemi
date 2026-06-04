@@ -905,7 +905,7 @@ InteractiveBoardDiagram {
 }
 
 .rule-action-select {
-    width: 30;
+    width: 26;
     margin-right: 1;
 }
 

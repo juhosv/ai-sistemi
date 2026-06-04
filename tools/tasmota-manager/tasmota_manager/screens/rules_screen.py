@@ -112,7 +112,7 @@ def _triggers_from_assignments(assignments: dict[int, str]) -> list[tuple[str, s
     seen_sensor_srcs: set[str] = set()
     for gpio, type_id in sorted(assignments.items()):
         base = type_id.split("_")[0] if "_" in type_id else type_id
-        pin_tag = f" (GPIO{gpio})"
+        pin_tag = f" (G{gpio})"   # short form to avoid line-wrapping in dropdown
         if base in _SENSOR_TRIGGERS:
             for label, src in _SENSOR_TRIGGERS[base]:
                 if src not in seen_sensor_srcs:
@@ -144,7 +144,7 @@ def _actions_from_assignments(assignments: dict[int, str]) -> list[tuple[str, st
     pwm_count = 0
     for gpio, type_id in sorted(assignments.items()):
         base = type_id.split("_")[0] if "_" in type_id else type_id
-        pin_tag = f" (GPIO{gpio})"
+        pin_tag = f" (G{gpio})"   # short form to avoid line-wrapping in dropdown
         if base == "relay":
             relay_count += 1
             options.append((f"Relay {relay_count} – BE{pin_tag}",     f"Power{relay_count} ON"))
@@ -153,7 +153,7 @@ def _actions_from_assignments(assignments: dict[int, str]) -> list[tuple[str, st
         elif base == "pwm":
             pwm_count += 1
             options.append((f"PWM {pwm_count} – Fényerő{pin_tag}",    f"__DIMMER_{pwm_count}"))
-            options.append((f"PWM {pwm_count} – Direkt érték{pin_tag}", f"__PWM_{pwm_count}"))
+            options.append((f"PWM {pwm_count} – Direkt{pin_tag}",     f"__PWM_{pwm_count}"))
     # Always available
     options.append(("Késleltetés (Delay)",    "__DELAY"))
     options.append(("Timer indítása",         "__TIMER"))
