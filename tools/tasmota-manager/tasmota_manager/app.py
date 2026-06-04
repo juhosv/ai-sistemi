@@ -54,9 +54,9 @@ class TasmoApp(App):
             yield FlashTab("⚡ Flash",  id="flash")
             yield SerialTab("🖥 Serial", id="serial")
             yield ConfigTab("⚙ Config", id="config")
+            yield RulesTab("📋 Rules",  id="rules")
             yield MQTTTab("📡 MQTT",   id="mqtt")
             yield BoardTab("🔌 Board",  id="board")
-            yield RulesTab("📋 Rules",  id="rules")
         yield Footer()
 
     # ------------------------------------------------------------------
