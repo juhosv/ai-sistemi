@@ -30,11 +30,22 @@ from tasmota_manager.board_layouts import (
     D1_MINI,
 )
 from tasmota_manager.config_builder import (
+    GPIO_FUNCTION_TYPES,
     GPIO_TYPE_BY_ID,
     assign_tasmota_codes,
     compute_gpio_instances,
 )
 from tasmota_manager.utils import rssi_to_bars, rssi_label
+
+# ---------------------------------------------------------------------------
+# Reverse mapping: Tasmota numeric code → type_id
+# Used to decode the GPIO command response from the device.
+# ---------------------------------------------------------------------------
+
+_TASMOTA_CODE_TO_TYPE: dict[int, str] = {}
+for _gt in GPIO_FUNCTION_TYPES:
+    for _code in _gt.base_codes:
+        _TASMOTA_CODE_TO_TYPE[_code] = _gt.type_id
 
 
 # ---------------------------------------------------------------------------
@@ -200,6 +211,96 @@ def _parse_status11(lines: list[str]) -> dict:
             if m:
                 idx = int(m.group(1) or "1")
                 result["power"].setdefault(idx, val == "ON")
+    return result
+
+
+def _parse_status4(lines: list[str]) -> dict:
+    """StatusMEM → free heap, program size."""
+    result: dict = {}
+    for line in lines:
+        if "StatusMEM" not in line:
+            continue
+        data = _extract_json(line)
+        if not data:
+            continue
+        mem = data.get("StatusMEM", {})
+        if "Heap" in mem:
+            result["heap"] = int(mem["Heap"])
+        if "ProgramSize" in mem:
+            result["program_size"] = int(mem["ProgramSize"])
+        if "Free" in mem:
+            result["flash_free"] = int(mem["Free"])
+    return result
+
+
+def _parse_status6(lines: list[str]) -> dict:
+    """StatusMQT → MQTT broker host/port, connection count, client."""
+    result: dict = {}
+    for line in lines:
+        if "StatusMQT" not in line:
+            continue
+        data = _extract_json(line)
+        if not data:
+            continue
+        mqt = data.get("StatusMQT", {})
+        for src, dst in [
+            ("MqttHost",   "mqtt_host"),
+            ("MqttPort",   "mqtt_port"),
+            ("MqttCount",  "mqtt_count"),
+            ("MqttClientMask", "mqtt_client"),
+        ]:
+            if src in mqt:
+                result[dst] = mqt[src]
+    return result
+
+
+def _parse_gpio_cmd(lines: list[str]) -> dict[int, str]:
+    """
+    Parse the Tasmota `GPIO` command response.
+
+    Tasmota returns e.g.:
+        {"GPIO":{"0":0,"2":0,"4":21,"5":160,...}}
+    Where values are numeric Tasmota function codes.
+
+    Some older versions return strings like "Relay1 (21)" –
+    we extract the number in parentheses as fallback.
+
+    Returns {gpio_num: type_id} using the reverse code table,
+    skipping GPIOs assigned to code 0 (None).
+    """
+    result: dict[int, str] = {}
+    for line in lines:
+        if '"GPIO"' not in line:
+            continue
+        data = _extract_json(line)
+        if not data or "GPIO" not in data:
+            continue
+        gpio_map = data["GPIO"]
+        if not isinstance(gpio_map, dict):
+            continue
+        for gpio_str, val in gpio_map.items():
+            try:
+                gpio_num = int(gpio_str)
+            except (ValueError, TypeError):
+                continue
+            # val may be int or string like "Relay1 (21)"
+            code: Optional[int] = None
+            if isinstance(val, int):
+                code = val
+            elif isinstance(val, str):
+                m = re.search(r"\((\d+)\)", val)
+                if m:
+                    code = int(m.group(1))
+                else:
+                    try:
+                        code = int(val)
+                    except (ValueError, TypeError):
+                        pass
+            if code is None or code == 0:
+                continue
+            type_id = _TASMOTA_CODE_TO_TYPE.get(code)
+            if type_id and type_id != "none":
+                result[gpio_num] = type_id
     return result
 
 
@@ -392,6 +493,7 @@ class BoardTab(TabPane):
                         yield Label("–", id="board-dev-topic")
                         yield Label("–", id="board-dev-firmware")
                         yield Label("–", id="board-dev-hardware")
+                        yield Label("", id="board-dev-heap")
 
                     # --- WiFi -------------------------------------------
                     with Vertical(id="board-wifi-panel", classes="board-info-panel"):
@@ -400,6 +502,13 @@ class BoardTab(TabPane):
                         yield Label("–", id="board-wifi-ssid")
                         yield Label("–", id="board-wifi-ip")
                         yield Label("–", id="board-wifi-signal")
+
+                    # --- MQTT -------------------------------------------
+                    with Vertical(id="board-mqtt-panel", classes="board-info-panel"):
+                        yield Static("MQTT", classes="section-title")
+                        yield Label("–", id="board-mqtt-broker")
+                        yield Label("", id="board-mqtt-client")
+                        yield Label("", id="board-mqtt-count")
 
                     # --- Sensor / Power ---------------------------------
                     with Vertical(id="board-sensor-panel", classes="board-info-panel"):
@@ -421,9 +530,14 @@ class BoardTab(TabPane):
         self._dev_firmware     = ""
         self._dev_hardware     = ""
         self._dev_module_id    = None
+        self._dev_heap         = 0
         self._wifi_ssid        = ""
         self._wifi_ip          = ""
         self._wifi_rssi        = None
+        self._mqtt_host        = ""
+        self._mqtt_port        = 0
+        self._mqtt_client      = ""
+        self._mqtt_count       = 0
         self._sensor_data      = {}
         self._energy_data      = {}
         self._uptime           = ""
@@ -527,9 +641,12 @@ class BoardTab(TabPane):
             for cmd, delay in [
                 ("Status 1",  0.4),   # topic, hostname
                 ("Status 2",  0.4),   # firmware, hardware
+                ("Status 4",  0.4),   # memory / heap
                 ("Status 5",  0.5),   # WiFi IP/SSID/RSSI
+                ("Status 6",  0.4),   # MQTT broker info
                 ("Status 10", 0.5),   # sensors + energy
                 ("Status 11", 0.5),   # GPIO states, uptime
+                ("GPIO",      0.5),   # current GPIO assignments from device
             ]:
                 serial_bridge.send(cmd)
                 await asyncio.sleep(delay)
@@ -538,9 +655,21 @@ class BoardTab(TabPane):
             lines = list(serial_bridge.line_buffer)
             self._apply_status1(_parse_status1(lines))
             self._apply_status2(_parse_status2(lines))
+            self._apply_status4(_parse_status4(lines))
             self._apply_status5(_parse_status5(lines))
+            self._apply_status6(_parse_status6(lines))
             self._apply_status10(_parse_status10(lines))
             self._apply_status11(_parse_status11(lines))
+            # GPIO from device overrides Config tab assignments
+            gpio_from_device = _parse_gpio_cmd(lines)
+            if gpio_from_device:
+                self._gpio_assignments = gpio_from_device
+                try:
+                    diag: BoardDiagram = self.query_one("#board-diagram", BoardDiagram)
+                    diag.set_gpio_functions(gpio_from_device)
+                except Exception:
+                    pass
+                self._rebuild_pin_table()
         except Exception:
             pass
         finally:
@@ -568,6 +697,11 @@ class BoardTab(TabPane):
             self._dev_hardware = data["hardware"]
         self._update_device_panel()
 
+    def _apply_status4(self, data: dict) -> None:
+        if data.get("heap"):
+            self._dev_heap = data["heap"]
+            self._update_device_panel()
+
     def _apply_status5(self, data: dict) -> None:
         if data.get("ssid"):
             self._wifi_ssid = data["ssid"]
@@ -576,6 +710,17 @@ class BoardTab(TabPane):
         if data.get("rssi") is not None:
             self._wifi_rssi = data["rssi"]
         self._update_wifi_panel()
+
+    def _apply_status6(self, data: dict) -> None:
+        if data.get("mqtt_host"):
+            self._mqtt_host = str(data["mqtt_host"])
+        if data.get("mqtt_port"):
+            self._mqtt_port = int(data["mqtt_port"])
+        if data.get("mqtt_client"):
+            self._mqtt_client = str(data["mqtt_client"])
+        if data.get("mqtt_count") is not None:
+            self._mqtt_count = int(data["mqtt_count"])
+        self._update_mqtt_panel()
 
     def _apply_status10(self, data: dict) -> None:
         if data.get("sensors"):
@@ -754,6 +899,31 @@ class BoardTab(TabPane):
             self.query_one("#board-dev-hardware").update(
                 f"[dim]Chip:[/dim]      {hw}"
             )
+            if self._dev_heap:
+                color = "green" if self._dev_heap > 20 else "yellow" if self._dev_heap > 10 else "red"
+                self.query_one("#board-dev-heap").update(
+                    f"[dim]Szabad RAM:[/dim] [{color}]{self._dev_heap} kB[/{color}]"
+                )
+        except Exception:
+            pass
+
+    def _update_mqtt_panel(self) -> None:
+        try:
+            if self._mqtt_host:
+                port = f":{self._mqtt_port}" if self._mqtt_port else ""
+                self.query_one("#board-mqtt-broker").update(
+                    f"[dim]Broker:[/dim]  [cyan]{self._mqtt_host}{port}[/cyan]"
+                )
+            else:
+                self.query_one("#board-mqtt-broker").update("[dim]Broker: –[/dim]")
+            if self._mqtt_client:
+                self.query_one("#board-mqtt-client").update(
+                    f"[dim]Kliens:[/dim]  {self._mqtt_client}"
+                )
+            if self._mqtt_count is not None and self._mqtt_count > 0:
+                self.query_one("#board-mqtt-count").update(
+                    f"[dim]Kapcsolódások:[/dim] {self._mqtt_count}"
+                )
         except Exception:
             pass
 
