@@ -155,8 +155,8 @@ def _parse_status5(lines: list[str]) -> dict:
 
 
 def _parse_status10(lines: list[str]) -> dict:
-    """StatusSNS → sensor readings dict + energy dict + switch states."""
-    result: dict = {"sensors": {}, "energy": {}, "switches": {}}
+    """StatusSNS → sensor readings dict + energy dict + switch states + counters."""
+    result: dict = {"sensors": {}, "energy": {}, "switches": {}, "counters": {}}
     _SENSOR_KEYS = {"AM2301", "DHT11", "DHT22", "DS18B20", "BMP280",
                     "BME280", "BME680", "SHT3X", "AHT20", "SCD40",
                     "SI7021", "HTU21", "MCP9808", "TSL2561"}
@@ -173,10 +173,18 @@ def _parse_status10(lines: list[str]) -> dict:
             elif key == "ENERGY" and isinstance(val, dict):
                 result["energy"] = val
             else:
-                # Switch1, Switch2, ... → {"ON"/"OFF"} states
+                # Switch1, Switch2, ... → ON/OFF physical state
                 m = re.match(r"Switch(\d+)$", key)
                 if m and isinstance(val, str):
                     result["switches"][int(m.group(1))] = (val == "ON")
+                    continue
+                # Counter1, Counter2, ... → pulse count integer
+                m = re.match(r"Counter(\d+)$", key)
+                if m:
+                    try:
+                        result["counters"][int(m.group(1))] = int(val)
+                    except (TypeError, ValueError):
+                        pass
     return result
 
 
@@ -434,6 +442,7 @@ class BoardDiagram(Static):
         self._pin_states: dict[int, Optional[bool]] = {}
         self._gpio_functions: dict[int, str] = {}
         self._pwm_values: dict[int, int] = {}
+        self._counter_values: dict[int, int] = {}
 
     def set_layout(self, layout: BoardLayout) -> None:
         self._layout = layout
@@ -449,6 +458,10 @@ class BoardDiagram(Static):
 
     def set_pwm_value(self, gpio: int, pct: int) -> None:
         self._pwm_values[gpio] = pct
+        self.refresh_diagram()
+
+    def set_counter_value(self, gpio: int, count: int) -> None:
+        self._counter_values[gpio] = count
         self.refresh_diagram()
 
     def refresh_diagram(self) -> None:
@@ -470,6 +483,9 @@ class BoardDiagram(Static):
             if type_id == "pwm" and pin.gpio in self._pwm_values:
                 pct = self._pwm_values[pin.gpio]
                 return "[bold cyan]■[/bold cyan]" if pct > 0 else "[dim]□[/dim]"
+            if type_id == "counter" and pin.gpio in self._counter_values:
+                cnt = self._counter_values[pin.gpio]
+                return "[bold yellow]■[/bold yellow]" if cnt > 0 else "[dim]□[/dim]"
             state = self._pin_states.get(pin.gpio)
             if state is True:
                 return "[bold green]■[/bold green]"
@@ -510,6 +526,10 @@ class BoardDiagram(Static):
                 label = f"{pct}%".rjust(4)
                 return f"[cyan]■{label}[/cyan]"
             return "[dim]□  0%[/dim]"
+        if type_id == "counter" and pin.gpio in self._counter_values:
+            cnt = self._counter_values[pin.gpio]
+            label = f"#{cnt}".rjust(4)
+            return f"[yellow]■{label}[/yellow]" if cnt > 0 else f"[dim]□{label}[/dim]"
         state = self._pin_states.get(pin.gpio)
         if state is True:
             return "[green]■ ON [/green]"
@@ -695,6 +715,7 @@ class BoardTab(TabPane):
         self._pin_table_keys: dict[int, str] = {}   # gpio_num → row_key
         self._outputs_signature: tuple = ()          # snapshot of current outputs structure
         self._pwm_values: dict[int, int] = {}        # gpio_num → duty cycle 0-100
+        self._counter_values: dict[int, int] = {}    # gpio_num → pulse count
         # Track our own TX relay/power commands so we don't misidentify their
         # echo as a physical switch press (key: "POWER{n}", value: expiry monotonic)
         self._sent_power_cmds: dict[str, float] = {}
@@ -1040,6 +1061,10 @@ class BoardTab(TabPane):
             gpio = self._find_gpio_for_switch(inst)
             if gpio is not None:
                 self._set_pin(gpio, state)
+        for inst, count in data.get("counters", {}).items():
+            gpio = self._find_gpio_for_type("counter", inst)
+            if gpio is not None:
+                self._set_counter_value(gpio, count)
         self._update_sensor_panel()
 
     def _apply_status11(self, data: dict) -> None:
@@ -1217,6 +1242,16 @@ class BoardTab(TabPane):
         except Exception:
             pass
 
+    def _set_counter_value(self, gpio: int, count: int) -> None:
+        """Store and display a pulse counter value for the given GPIO."""
+        self._counter_values[gpio] = count
+        self._set_pin(gpio, count > 0)   # refreshes pin table row
+        try:
+            diag: BoardDiagram = self.query_one("#board-diagram", BoardDiagram)
+            diag.set_counter_value(gpio, count)
+        except Exception:
+            pass
+
     def _find_gpio_for_relay(self, instance: int) -> Optional[int]:
         return self._find_gpio_for_type("relay", instance)
 
@@ -1302,6 +1337,10 @@ class BoardTab(TabPane):
                     state_text = Text(f"■ {pct}%", style="bold cyan")
                 else:
                     state_text = Text("□ 0%", style="dim")
+            # For counter pins show the current pulse count
+            elif type_id == "counter" and pin.gpio in self._counter_values:
+                cnt = self._counter_values[pin.gpio]
+                state_text = Text(f"# {cnt}", style="bold yellow" if cnt > 0 else "dim")
             elif state is True:
                 state_text = Text("■ ON",  style="bold green")
             elif state is False:
