@@ -899,6 +899,11 @@ InteractiveBoardDiagram {
     width: 14;
 }
 
+/* Generic hidden helper used in Rules tab */
+.hidden {
+    display: none;
+}
+
 .rule-action-select {
     width: 30;
     margin-right: 1;

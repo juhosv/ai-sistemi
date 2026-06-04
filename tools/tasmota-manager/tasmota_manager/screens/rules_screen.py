@@ -179,23 +179,16 @@ _ONOFF_OPTIONS: list[tuple[str, str]] = [
     ("KI – 0",  "0"),
 ]
 
-_SWITCH_TOGGLE_OPTIONS: list[tuple[str, str]] = [
-    ("BE – 1",     "1"),
-    ("KI – 0",     "0"),
-    ("TOGGLE – 2", "2"),
-]
-
-
 def _get_trigger_value_options(src: str) -> Optional[list[tuple[str, str]]]:
-    """Return preset dropdown options if the trigger has discrete values, else None."""
+    """Return preset dropdown options if the trigger has discrete values, else None.
+
+    Switch#State and Power#State accept 0 (KI) or 1 (BE).
+    Returns None for numeric/free-input triggers.
+    """
     if not src:
         return None
-    if "#State" in src:
-        # Switch1#State, Switch2#State → 0/1/2(TOGGLE for switch)
-        if src.startswith("Switch"):
-            return _SWITCH_TOGGLE_OPTIONS
-        if src.startswith("Power"):
-            return _ONOFF_OPTIONS
+    if "#State" in src and (src.startswith("Switch") or src.startswith("Power")):
+        return _ONOFF_OPTIONS
     return None  # numeric / free input
 
 
