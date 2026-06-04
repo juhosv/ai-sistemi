@@ -101,26 +101,33 @@ class RuleEntry:
 # ---------------------------------------------------------------------------
 
 def _triggers_from_assignments(assignments: dict[int, str]) -> list[tuple[str, str]]:
-    """Build trigger option list from Config tab GPIO assignments."""
+    """Build trigger option list from Config tab GPIO assignments.
+
+    Labels include the GPIO pin number so the user can identify the hardware pin,
+    e.g. "Switch 1 bement (GPIO21)" or "Relay 1 állapot (GPIO32)".
+    """
     options: list[tuple[str, str]] = []
     relay_count = 0
     switch_count = 0
-    for type_id in assignments.values():
+    seen_sensor_srcs: set[str] = set()
+    for gpio, type_id in sorted(assignments.items()):
         base = type_id.split("_")[0] if "_" in type_id else type_id
+        pin_tag = f" (GPIO{gpio})"
         if base in _SENSOR_TRIGGERS:
             for label, src in _SENSOR_TRIGGERS[base]:
-                if (label, src) not in options:
-                    options.append((label, src))
+                if src not in seen_sensor_srcs:
+                    seen_sensor_srcs.add(src)
+                    options.append((label + pin_tag, src))
         elif base == "relay":
             relay_count += 1
             lbl, src_tmpl = _RELAY_TRIGGER_TMPL
-            lbl2 = lbl.replace("{n}", str(relay_count))
+            lbl2 = lbl.replace("{n}", str(relay_count)) + pin_tag
             src2 = src_tmpl.replace("{n}", str(relay_count))
             options.append((lbl2, src2))
         elif base == "switch":
             switch_count += 1
             lbl, src_tmpl = _SWITCH_TRIGGER_TMPL
-            lbl2 = lbl.replace("{n}", str(switch_count))
+            lbl2 = lbl.replace("{n}", str(switch_count)) + pin_tag
             src2 = src_tmpl.replace("{n}", str(switch_count))
             options.append((lbl2, src2))
     options.extend(_FIXED_TRIGGERS)
@@ -128,21 +135,25 @@ def _triggers_from_assignments(assignments: dict[int, str]) -> list[tuple[str, s
 
 
 def _actions_from_assignments(assignments: dict[int, str]) -> list[tuple[str, str]]:
-    """Build action option list from GPIO assignments."""
+    """Build action option list from GPIO assignments.
+
+    Labels include the GPIO pin number, e.g. "Relay 1 – BE (GPIO32)".
+    """
     options: list[tuple[str, str]] = []
     relay_count = 0
     pwm_count = 0
-    for type_id in assignments.values():
+    for gpio, type_id in sorted(assignments.items()):
         base = type_id.split("_")[0] if "_" in type_id else type_id
+        pin_tag = f" (GPIO{gpio})"
         if base == "relay":
             relay_count += 1
-            options.append((f"Relay {relay_count} – BE",      f"Power{relay_count} ON"))
-            options.append((f"Relay {relay_count} – KI",      f"Power{relay_count} OFF"))
-            options.append((f"Relay {relay_count} – VÁLTÁS",  f"Power{relay_count} TOGGLE"))
+            options.append((f"Relay {relay_count} – BE{pin_tag}",     f"Power{relay_count} ON"))
+            options.append((f"Relay {relay_count} – KI{pin_tag}",     f"Power{relay_count} OFF"))
+            options.append((f"Relay {relay_count} – VÁLTÁS{pin_tag}", f"Power{relay_count} TOGGLE"))
         elif base == "pwm":
             pwm_count += 1
-            options.append((f"PWM {pwm_count} – Fényerő (Dimmer)", f"__DIMMER_{pwm_count}"))
-            options.append((f"PWM {pwm_count} – Direkt érték",      f"__PWM_{pwm_count}"))
+            options.append((f"PWM {pwm_count} – Fényerő{pin_tag}",    f"__DIMMER_{pwm_count}"))
+            options.append((f"PWM {pwm_count} – Direkt érték{pin_tag}", f"__PWM_{pwm_count}"))
     # Always available
     options.append(("Késleltetés (Delay)",    "__DELAY"))
     options.append(("Timer indítása",         "__TIMER"))
