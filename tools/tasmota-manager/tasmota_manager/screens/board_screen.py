@@ -433,6 +433,7 @@ class BoardDiagram(Static):
         self._layout = layout
         self._pin_states: dict[int, Optional[bool]] = {}
         self._gpio_functions: dict[int, str] = {}
+        self._pwm_values: dict[int, int] = {}
 
     def set_layout(self, layout: BoardLayout) -> None:
         self._layout = layout
@@ -444,6 +445,10 @@ class BoardDiagram(Static):
 
     def set_gpio_functions(self, assignments: dict[int, str]) -> None:
         self._gpio_functions = assignments
+        self.refresh_diagram()
+
+    def set_pwm_value(self, gpio: int, pct: int) -> None:
+        self._pwm_values[gpio] = pct
         self.refresh_diagram()
 
     def refresh_diagram(self) -> None:
@@ -461,6 +466,10 @@ class BoardDiagram(Static):
         if pin.boot_sensitive:
             return "[orange3]●[/orange3]"
         if pin.gpio is not None:
+            type_id = self._gpio_functions.get(pin.gpio)
+            if type_id == "pwm" and pin.gpio in self._pwm_values:
+                pct = self._pwm_values[pin.gpio]
+                return "[bold cyan]■[/bold cyan]" if pct > 0 else "[dim]□[/dim]"
             state = self._pin_states.get(pin.gpio)
             if state is True:
                 return "[bold green]■[/bold green]"
@@ -490,6 +499,24 @@ class BoardDiagram(Static):
                  .replace("I2C busz – SDA (adat)", "I2C SDA"))
         return label[:14] if len(label) <= 14 else label[:13] + "…"
 
+    def _state_text(self, pin: "PinDef") -> str:
+        """Return the Rich-markup state string for a pin (5 chars wide)."""
+        if pin.gpio is None:
+            return "     "
+        type_id = self._gpio_functions.get(pin.gpio)
+        if type_id == "pwm" and pin.gpio in self._pwm_values:
+            pct = self._pwm_values[pin.gpio]
+            if pct > 0:
+                label = f"{pct}%".rjust(4)
+                return f"[cyan]■{label}[/cyan]"
+            return "[dim]□  0%[/dim]"
+        state = self._pin_states.get(pin.gpio)
+        if state is True:
+            return "[green]■ ON [/green]"
+        if state is False:
+            return "[dim]□ OFF[/dim]"
+        return "     "
+
     def _render_diagram(self) -> str:
         layout = self._layout
         w = layout.display_width
@@ -508,21 +535,19 @@ class BoardDiagram(Static):
             rp = right_pins[i] if i < len(right_pins) else None
 
             if lp:
-                l_dot  = self._pin_dot(lp)
-                l_name = f"{lp.label:<4}"
-                l_func = self._pin_func_label(lp)
-                st_lp  = self._pin_states.get(lp.gpio) if lp.gpio is not None else None
-                l_state = "[green]■ ON [/green]" if st_lp is True else "[dim]□ OFF[/dim]" if st_lp is False else "     "
+                l_dot   = self._pin_dot(lp)
+                l_name  = f"{lp.label:<4}"
+                l_func  = self._pin_func_label(lp)
+                l_state = self._state_text(lp)
                 left_part = f"{l_name} {l_dot} {l_func:<14} {l_state}"
             else:
                 left_part = " " * 28
 
             if rp:
-                r_dot  = self._pin_dot(rp)
-                r_name = f"{rp.label:<4}"
-                r_func = self._pin_func_label(rp)
-                st_rp  = self._pin_states.get(rp.gpio) if rp.gpio is not None else None
-                r_state = "[green]■ ON [/green]" if st_rp is True else "[dim]□ OFF[/dim]" if st_rp is False else "     "
+                r_dot   = self._pin_dot(rp)
+                r_name  = f"{rp.label:<4}"
+                r_func  = self._pin_func_label(rp)
+                r_state = self._state_text(rp)
                 right_part = f"{r_state} {r_func:<14} {r_dot} {r_name}"
             else:
                 right_part = " " * 28
@@ -1167,6 +1192,13 @@ class BoardTab(TabPane):
 
         # Update pin state (ON if duty > 0) so the pin table refreshes too
         self._set_pin(gpio, pct > 0)
+
+        # Also push the PWM value to the board diagram for % display
+        try:
+            diag: BoardDiagram = self.query_one("#board-diagram", BoardDiagram)
+            diag.set_pwm_value(gpio, pct)
+        except Exception:
+            pass
 
         try:
             inp: Input = self.query_one(f"#bout_pwm_input_{gpio}", Input)
