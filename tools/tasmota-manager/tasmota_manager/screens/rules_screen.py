@@ -611,7 +611,7 @@ class RulesTab(TabPane):
 
             # --- Send row --------------------------------------------------
             with Horizontal(id="rules-send-row"):
-                yield Button("📡 Küldés soros porton", id="rules-send-serial-btn", variant="primary")
+                yield Button("📡 Küldés eszközre", id="rules-send-serial-btn", variant="primary")
                 yield Label("", id="rules-send-status", classes="hint")
 
             # --- Fetched rule panel (only visible after fetch) ---------------
@@ -635,11 +635,25 @@ class RulesTab(TabPane):
 
     def on_mount(self) -> None:
         self.set_interval(0.5, self._refresh_preview)
+        self.set_interval(1.0, self._update_button_states)
         self.set_timer(0.1, self._update_slot_buttons)
 
     def on_select_changed(self, event: Select.Changed) -> None:
         if event.select.id == "rules-rule-select":
             self._update_slot_buttons()
+
+    def _update_button_states(self) -> None:
+        """Enable/disable fetch/send buttons based on connection state."""
+        try:
+            app = self.app  # type: ignore[attr-defined]
+            connected = app.any_device_connected()
+            for btn_id in ("#rules-fetch-btn", "#rules-send-serial-btn"):
+                try:
+                    self.query_one(btn_id, Button).disabled = not connected
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     # Public: called by app when tab is activated
@@ -947,7 +961,7 @@ class RulesTab(TabPane):
         status_lbl.update("[yellow]Küldés…[/yellow]")
         try:
             for cmd in cmds:
-                app.send_cmd(cmd)
+                await app.send_cmd_async(cmd)
                 await asyncio.sleep(0.3)
             status_lbl.update(f"[green]● {len(cmds)} parancs elküldve[/green]")
             self.notify(f"Rule{rule_num} elküldve ({len(cmds)} parancs)", severity="information")
@@ -970,7 +984,7 @@ class RulesTab(TabPane):
         status_lbl.update("[yellow]Lekérés…[/yellow]")
         try:
             bridge.clear_buffer()
-            app.send_cmd(f"Rule{rule_num}")
+            await app.send_cmd_async(f"Rule{rule_num}")
             await asyncio.sleep(1.5)
             lines = list(bridge.line_buffer)
             raw = _parse_rule_response(lines, rule_num)

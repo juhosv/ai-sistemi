@@ -637,7 +637,7 @@ class ConfigTab(TabPane):
 
             # --- Send buttons -------------------------------------------
             with Horizontal(id="config-send-row"):
-                yield Button("📡 Küldés soros porton", id="cfg-send-serial-btn", variant="primary")
+                yield Button("📡 Küldés eszközre", id="cfg-send-serial-btn", variant="primary")
                 yield Button("📡 Küldés MQTT-n", id="cfg-send-mqtt-btn", variant="success")
 
             # --- HTTP backup / restore ----------------------------------
@@ -665,9 +665,10 @@ class ConfigTab(TabPane):
         self._refresh_profiles()
         self._refresh_backup_list()
         self._rebuild_board_diagram()
-        # Update serial hint every second
         self.set_interval(1.0, self._update_fetch_hint)
+        self.set_interval(1.0, self._update_button_states)
         self._update_fetch_hint()
+        self._update_button_states()
 
     def _update_fetch_hint(self) -> None:
         """Show/hide connection hint based on current connection state."""
@@ -680,6 +681,32 @@ class ConfigTab(TabPane):
                 lbl.update("")
             else:
                 lbl.update("[dim]  Kapcsolat szükséges (Serial tab → Csatlakozás / HTTP)[/dim]")
+        except Exception:
+            pass
+
+    def _update_button_states(self) -> None:
+        """Enable/disable buttons based on active connection type."""
+        try:
+            app = self.app  # type: ignore[attr-defined]
+            connected    = app.any_device_connected()
+            http_ok      = app.http_bridge.is_connected
+            mqtt_ok      = app.mqtt_manager.connected
+
+            _set = {
+                "#cfg-fetch-btn":       connected,
+                "#wifi-scan-btn":       connected,
+                "#wifi-pick-ssid1":     connected,
+                "#wifi-pick-ssid2":     connected,
+                "#cfg-send-serial-btn": connected,
+                "#cfg-send-mqtt-btn":   mqtt_ok,
+                "#cfg-backup-btn":      http_ok,
+                "#cfg-restore-btn":     http_ok,
+            }
+            for sel, enabled in _set.items():
+                try:
+                    self.query_one(sel, Button).disabled = not enabled
+                except Exception:
+                    pass
         except Exception:
             pass
 
@@ -1529,23 +1556,23 @@ class ConfigTab(TabPane):
             # Clear buffer so we only parse fresh responses
             bridge.clear_buffer()
 
-            # Send all status and config queries
+            # Send all status and config queries (non-blocking for HTTP)
             # Status 0 = full status dump; in Tasmota 15 Topic/Module are ONLY here
-            app.send_cmd("Status 0")
+            await app.send_cmd_async("Status 0")
             await asyncio.sleep(0.6)
-            app.send_cmd("Status 1")   # StatusPRM (baudrate, OTA url, etc.)
+            await app.send_cmd_async("Status 1")   # StatusPRM
             await asyncio.sleep(0.4)
-            app.send_cmd("Status 5")   # active WiFi SSID, IP (no password)
+            await app.send_cmd_async("Status 5")   # active WiFi SSID, IP
             await asyncio.sleep(0.4)
-            app.send_cmd("Ssid1")      # configured SSID1 (regardless of active conn.)
+            await app.send_cmd_async("Ssid1")      # configured SSID1
             await asyncio.sleep(0.3)
-            app.send_cmd("Ssid2")      # configured SSID2 (backup network)
+            await app.send_cmd_async("Ssid2")      # configured SSID2
             await asyncio.sleep(0.3)
-            app.send_cmd("Status 6")   # MQTT host, port, user (no password)
+            await app.send_cmd_async("Status 6")   # MQTT host, port, user
             await asyncio.sleep(0.4)
-            app.send_cmd("Status 2")   # Firmware / chip hardware
+            await app.send_cmd_async("Status 2")   # Firmware / chip hardware
             await asyncio.sleep(0.4)
-            app.send_cmd("GPIO")       # GPIO function assignments
+            await app.send_cmd_async("GPIO")       # GPIO function assignments
             await asyncio.sleep(1.0)   # Wait for all responses to arrive
 
             lines = list(bridge.line_buffer)
@@ -1692,7 +1719,7 @@ class ConfigTab(TabPane):
             # RSL: RESULT = {"WiFiScan":{"NET1":{...}}} lines after scan completes.
             # There is NO need to send a second query; just wait for the device.
             bridge.clear_buffer()
-            app.send_cmd("WifiScan 1")
+            await app.send_cmd_async("WifiScan 1")
 
             # Poll the buffer every 0.5 s; give up after SCAN_TIMEOUT seconds.
             # Once the first NET result arrives, wait one extra second for the
@@ -1838,13 +1865,13 @@ class ConfigTab(TabPane):
                     serial_bridge.comm.send_config_block(phase1, delay=0.2)
                 else:
                     for cmd in phase1:
-                        app.send_cmd(cmd)
+                        await app.send_cmd_async(cmd)
                         await _asyncio.sleep(0.2)
                 await _asyncio.sleep(0.5)
 
             # Phase 2: Module (if needed) – triggers reboot, wait for device to come back
             if module_cmd:
-                app.send_cmd(module_cmd)
+                await app.send_cmd_async(module_cmd)
                 self.notify(
                     "Module parancs elküldve – várakozás az újraindulásra (6 mp)…",
                     severity="information",
@@ -1854,7 +1881,7 @@ class ConfigTab(TabPane):
 
             # Phase 3: GPIO + Restart (Backlog0, no Module inside)
             if gpio_backlog:
-                app.send_cmd(gpio_backlog)
+                await app.send_cmd_async(gpio_backlog)
 
             self.notify(
                 f"Konfig elküldve: {len(phase1)} alap parancs"

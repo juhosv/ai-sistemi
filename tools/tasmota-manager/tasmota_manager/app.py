@@ -1,6 +1,7 @@
 """TasmoApp – main Textual application."""
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -26,14 +27,14 @@ class TasmoApp(App):
     CSS_PATH = str(CSS_PATH)
 
     BINDINGS = [
-        Binding("f1", "switch_tab('flash')",   "Flash",   show=True),
-        Binding("f2", "switch_tab('serial')",  "Serial",  show=True),
-        Binding("f3", "switch_tab('config')",  "Config",  show=True),
-        Binding("f4", "switch_tab('mqtt')",    "MQTT",    show=True),
-        Binding("f5", "switch_tab('board')",   "Board",   show=True),
-        Binding("f6", "switch_tab('rules')",   "Rules",   show=True),
-        Binding("ctrl+s", "save_config",       "Mentés",  show=True),
-        Binding("q", "quit",                   "Kilépés", show=True),
+        Binding("f1", "switch_tab('flash')",   "Flash",     show=True),
+        Binding("f2", "switch_tab('serial')",  "Kapcsolat", show=True),
+        Binding("f3", "switch_tab('config')",  "Config",    show=True),
+        Binding("f4", "switch_tab('mqtt')",    "MQTT",      show=True),
+        Binding("f5", "switch_tab('board')",   "Board",     show=True),
+        Binding("f6", "switch_tab('rules')",   "Rules",     show=True),
+        Binding("ctrl+s", "save_config",       "Mentés",    show=True),
+        Binding("q", "quit",                   "Kilépés",   show=True),
     ]
 
     # ------------------------------------------------------------------
@@ -51,11 +52,40 @@ class TasmoApp(App):
     # ------------------------------------------------------------------
 
     def send_cmd(self, cmd: str) -> None:
-        """Send a Tasmota command via HTTP (if connected) or serial fallback."""
+        """Send a Tasmota command – fire-and-forget, safe to call from sync code.
+
+        HTTP requests run in a thread-pool executor so the Textual event loop
+        is never blocked by the network call (up to 8 s timeout).
+        """
         if self.http_bridge.is_connected:
-            self.http_bridge.send(cmd)
+            try:
+                loop = asyncio.get_event_loop()
+                loop.run_in_executor(None, self.http_bridge.send, cmd)
+            except RuntimeError:
+                # No running loop (e.g. called from a non-async context during tests)
+                self.http_bridge.send(cmd)
         elif self.serial_bridge.is_connected:
             self.serial_bridge.send(cmd)
+
+    async def send_cmd_async(self, cmd: str) -> bool:
+        """Async, non-blocking command send. Returns True on success.
+
+        HTTP calls are offloaded to the thread-pool executor so that async
+        callers (board poll, config fetch, rules send) can await them without
+        freezing the UI. Serial writes are non-blocking and return immediately.
+        """
+        if self.http_bridge.is_connected:
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(None, self.http_bridge.send, cmd)
+            return result is not None
+        elif self.serial_bridge.is_connected:
+            self.serial_bridge.send(cmd)
+            return True
+        return False
+
+    def any_device_connected(self) -> bool:
+        """Return True if either serial or HTTP bridge is connected."""
+        return self.serial_bridge.is_connected or self.http_bridge.is_connected
 
     # ------------------------------------------------------------------
     # Layout
@@ -65,7 +95,7 @@ class TasmoApp(App):
         yield Header(show_clock=True)
         with TabbedContent(id="main-tabs"):
             yield FlashTab("⚡ Flash",  id="flash")
-            yield SerialTab("🖥 Serial", id="serial")
+            yield SerialTab("🔌 Kapcsolat", id="serial")
             yield ConfigTab("⚙ Config", id="config")
             yield RulesTab("📋 Rules",  id="rules")
             yield MQTTTab("📡 MQTT",   id="mqtt")

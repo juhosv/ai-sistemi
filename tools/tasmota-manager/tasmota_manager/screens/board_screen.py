@@ -631,7 +631,7 @@ class BoardTab(TabPane):
                 yield Label("Forrás:", classes="label")
                 with RadioSet(id="board-source-radio"):
                     yield RadioButton("MQTT", id="src-mqtt", value=True)
-                    yield RadioButton("Serial", id="src-serial")
+                    yield RadioButton("Soros/HTTP", id="src-serial")
                 yield Label("", id="board-uptime-label", classes="board-uptime")
                 yield Button("↺ Lekérés", id="board-poll-btn", variant="primary")
                 yield Button("GPIO diagn.", id="board-gpio-diag-btn", variant="default")
@@ -736,6 +736,7 @@ class BoardTab(TabPane):
         self.run_worker(self._auto_poll_serial(),       exclusive=True,  name="board_serial_poll")
         self.run_worker(self._chip_watcher(),           exclusive=False, name="board_chip_watcher")
         self.run_worker(self._serial_state_monitor(),   exclusive=False, name="board_serial_live")
+        self.set_interval(1.0, self._update_button_states)
 
     # ------------------------------------------------------------------
     # Select / button handlers
@@ -940,6 +941,33 @@ class BoardTab(TabPane):
                 self._apply_power(idx, payload_str.strip().upper() == "ON")
 
     # ------------------------------------------------------------------
+    # Button state management
+    # ------------------------------------------------------------------
+
+    def _update_button_states(self) -> None:
+        """Enable/disable buttons based on current connection state."""
+        try:
+            app = self.app  # type: ignore[attr-defined]
+            connected = app.any_device_connected()
+            mqtt_ok   = app.mqtt_manager.connected
+
+            for btn_id in ("#board-poll-btn", "#board-gpio-diag-btn"):
+                try:
+                    self.query_one(btn_id, Button).disabled = not connected
+                except Exception:
+                    pass
+
+            # Output buttons: disabled if both serial/HTTP and MQTT are absent
+            any_ok = connected or mqtt_ok
+            try:
+                for btn in self.query(".board-output-btn").results(Button):
+                    btn.disabled = not any_ok
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------------
     # Serial polling
     # ------------------------------------------------------------------
 
@@ -970,14 +998,14 @@ class BoardTab(TabPane):
                 ("Status 10", 0.6),   # sensors + energy
                 ("Status 11", 0.6),   # GPIO states, uptime
             ]:
-                app.send_cmd(cmd)
+                await app.send_cmd_async(cmd)
                 await asyncio.sleep(delay)
 
             # Phase 2: bulk GPIO assignment query
             # "GPIO" (no argument) returns all current GPIO assignments at once.
             # Falls back to individual GPIOx queries if bulk returns nothing.
             btn.label = "GPIO…"
-            app.send_cmd("GPIO")
+            await app.send_cmd_async("GPIO")
             await asyncio.sleep(0.8)   # wait for bulk response
 
             lines = list(bridge.line_buffer)
@@ -1009,7 +1037,7 @@ class BoardTab(TabPane):
                 ]
                 bridge.clear_buffer()
                 for gpio_num in board_gpio_nums:
-                    app.send_cmd(f"GPIO{gpio_num}")
+                    await app.send_cmd_async(f"GPIO{gpio_num}")
                     await asyncio.sleep(0.1)
                 await asyncio.sleep(0.5)
                 lines2 = list(bridge.line_buffer)
@@ -1691,9 +1719,9 @@ class BoardTab(TabPane):
 
         bridge.clear_buffer()
         # Try both the bulk GPIO command and GPIO32 individually
-        app.send_cmd("GPIO")
+        await app.send_cmd_async("GPIO")
         await asyncio.sleep(1.0)
-        app.send_cmd("GPIO32")
+        await app.send_cmd_async("GPIO32")
         await asyncio.sleep(0.5)
 
         lines = list(bridge.line_buffer)
@@ -1719,7 +1747,7 @@ class BoardTab(TabPane):
             return
         try:
             bridge.clear_buffer()
-            app.send_cmd("Status 11")
+            await app.send_cmd_async("Status 11")
             await asyncio.sleep(0.5)
             lines = list(bridge.line_buffer)
             self._apply_status11(_parse_status11(lines))
