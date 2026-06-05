@@ -896,6 +896,40 @@ class RulesTab(TabPane):
             pass
 
     # ------------------------------------------------------------------
+    # Load from DMP backup
+    # ------------------------------------------------------------------
+
+    def load_rules_from_backup(self, rules: list) -> None:
+        """Load Rule1-Rule5 strings from a decoded .dmp backup.
+
+        Shows the first non-empty rule in the fetched panel and selects
+        the corresponding slot in the Rule selector.
+        """
+        try:
+            from textual.widgets import TextArea, Static, Select
+            for i, rule_text in enumerate(rules[:5]):
+                if not rule_text:
+                    continue
+                rule_num = i + 1
+                self._fetched_rule_text = rule_text
+                self._fetched_rule_num  = rule_num
+                fetched_area = self.query_one("#rules-fetched-area", TextArea)
+                fetched_area.load_text(rule_text)
+                self.query_one("#rules-fetched-title", Static).update(
+                    f"Backup-ból betöltött Rule{rule_num}"
+                )
+                self.query_one("#rules-fetched-panel").remove_class("hidden")
+                # Select the matching rule slot
+                try:
+                    self.query_one("#rules-rule-select", Select).value = str(rule_num)
+                except Exception:
+                    pass
+                # Only show first non-empty rule by default
+                break
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------------
     # Send to device
     # ------------------------------------------------------------------
 

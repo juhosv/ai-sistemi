@@ -4,11 +4,13 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import subprocess
+import sys
 from pathlib import Path
 from typing import Optional
 
-# GPIO parser shared with the Board tab
-from tasmota_manager.screens.board_screen import _parse_gpio_from_device
+# GPIO parser and type resolver shared with the Board tab
+from tasmota_manager.screens.board_screen import _parse_gpio_from_device, _to_type
 
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical, ScrollableContainer
@@ -634,6 +636,7 @@ class ConfigTab(TabPane):
                     allow_blank=False,
                 )
                 yield Button("📤 Visszatöltés", id="cfg-restore-btn", variant="warning")
+                yield Button("📋 Betöltés backup-ból", id="cfg-load-from-dmp-btn", variant="default")
                 yield Label("", id="cfg-backup-status")
 
     # ------------------------------------------------------------------
@@ -698,6 +701,8 @@ class ConfigTab(TabPane):
             self.run_worker(self._do_backup(), name="cfg_backup")
         elif bid == "cfg-restore-btn":
             self.run_worker(self._do_restore(), name="cfg_restore")
+        elif bid == "cfg-load-from-dmp-btn":
+            self.run_worker(self._do_load_from_dmp(), name="cfg_load_dmp")
         # --- Group editor buttons ---
         elif bid == "cfg-groups-edit-btn":
             self._toggle_groups_editor()
@@ -1921,6 +1926,200 @@ class ConfigTab(TabPane):
                 self.notify("Konfig visszatöltés sikertelen!", severity="error")
         except Exception as exc:
             status_lbl.update(f"[red]Hiba: {exc}[/red]")
+
+    # ------------------------------------------------------------------
+    # DMP binary parse and multi-tab load
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _find_python() -> Optional[str]:
+        """Find a usable Python interpreter.
+
+        When running from source: use the current interpreter.
+        When running from a PyInstaller exe: look for Python in PATH.
+        """
+        import shutil
+        if not getattr(sys, "frozen", False):
+            return sys.executable
+        for candidate in ("python.exe", "python3.exe", "py.exe", "python3", "python"):
+            found = shutil.which(candidate)
+            if found:
+                return found
+        return None
+
+    @staticmethod
+    def _find_decode_script() -> Optional[Path]:
+        """Locate decode_config_tool.py.
+
+        Checks _MEIPASS (PyInstaller _internal/), next to the exe, and the
+        development project root.
+        """
+        candidates: list[Path] = []
+        # PyInstaller: resources are in sys._MEIPASS (_internal/)
+        meipass = getattr(sys, "_MEIPASS", None)
+        if meipass:
+            candidates.append(Path(meipass) / "decode_config_tool.py")
+        # Next to the exe (top-level dist folder)
+        candidates.append(Path(sys.executable).parent / "decode_config_tool.py")
+        # Development: three levels up from this file → tasmota-manager/
+        candidates.append(Path(__file__).parent.parent.parent / "decode_config_tool.py")
+        for p in candidates:
+            if p.exists():
+                return p
+        return None
+
+    async def _parse_dmp(self, dmp_path: Path) -> Optional[dict]:
+        """Call decode_config_tool.py as subprocess and return parsed JSON."""
+        python = self._find_python()
+        if not python:
+            self.notify(
+                "Python interpreter nem található!\n"
+                "Telepítsd a Pythont, hogy a backup parse-olás működjön.",
+                severity="error", timeout=10,
+            )
+            return None
+        script = self._find_decode_script()
+        if not script:
+            self.notify(
+                "decode_config_tool.py nem található!\n"
+                "Ellenőrizd, hogy a fájl az exe mellett van.",
+                severity="error", timeout=10,
+            )
+            return None
+        try:
+            result = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: subprocess.run(
+                    [python, str(script),
+                     "-s", dmp_path.resolve().as_uri(),
+                     "-T", "json",
+                     "--json-show-pw",
+                     "--json-indent", "-1"],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+            )
+            if result.returncode != 0:
+                self.notify(
+                    f"decode-config hiba (exit {result.returncode}):\n{result.stderr[:200]}",
+                    severity="error", timeout=10,
+                )
+                return None
+            return json.loads(result.stdout)
+        except Exception as exc:
+            self.notify(f"Parse hiba: {exc}", severity="error")
+            return None
+
+    async def _do_load_from_dmp(self) -> None:
+        """Load all fields from the selected .dmp backup into Config, Board, Rules tabs."""
+        sel: Select = self.query_one("#cfg-restore-select")
+        path_str = str(sel.value)
+        if not path_str or path_str == "__none" or sel.value is Select.BLANK:
+            self.notify("Nincs backup fájl kiválasztva!", severity="warning")
+            return
+
+        dmp_path = Path(path_str)
+        if not dmp_path.exists():
+            self.notify(f"Fájl nem található: {dmp_path}", severity="error")
+            return
+
+        status_lbl: Label = self.query_one("#cfg-backup-status")
+        status_lbl.update("[yellow]Parse-olás…[/yellow]")
+
+        data = await self._parse_dmp(dmp_path)
+        if not data:
+            status_lbl.update("[red]Parse sikertelen[/red]")
+            return
+
+        filled = self._apply_dmp_data(data)
+        status_lbl.update(f"[green]✓ {dmp_path.name} betöltve ({filled} mező)[/green]")
+        self.notify(
+            f"Backup betöltve: {filled} mező kitöltve\n({dmp_path.name})",
+            severity="information", timeout=8,
+        )
+
+    def _apply_dmp_data(self, data: dict) -> int:
+        """Fill Config, Board and Rules tabs from a decoded .dmp dict.
+
+        Returns the number of fields that were filled.
+        """
+        filled = 0
+
+        def _s(val) -> str:
+            return str(val) if val is not None else ""
+
+        # --- WiFi ---
+        sta_ssid = data.get("sta_ssid") or []
+        sta_pwd  = data.get("sta_pwd")  or []
+        if len(sta_ssid) > 0 and sta_ssid[0]:
+            self._set_input("#cfg-ssid1", _s(sta_ssid[0]));  filled += 1
+        if len(sta_ssid) > 1 and sta_ssid[1]:
+            self._set_input("#cfg-ssid2", _s(sta_ssid[1]));  filled += 1
+        if len(sta_pwd) > 0 and sta_pwd[0]:
+            self._set_input("#cfg-pass1", _s(sta_pwd[0]));   filled += 1
+        if len(sta_pwd) > 1 and sta_pwd[1]:
+            self._set_input("#cfg-pass2", _s(sta_pwd[1]));   filled += 1
+
+        # --- MQTT ---
+        for key, widget_id in [
+            ("mqtt_host",      "#cfg-mqtt-host"),
+            ("mqtt_user",      "#cfg-mqtt-user"),
+            ("mqtt_pwd",       "#cfg-mqtt-pass"),
+            ("mqtt_topic",     "#cfg-mqtt-topic"),
+            ("mqtt_fulltopic", "#cfg-mqtt-fulltopic"),
+        ]:
+            val = data.get(key)
+            if val:
+                self._set_input(widget_id, _s(val))
+                filled += 1
+        if data.get("mqtt_port"):
+            self._set_input("#cfg-mqtt-port", _s(data["mqtt_port"]))
+            filled += 1
+
+        # --- TelePeriod ---
+        if data.get("tele_period"):
+            self._set_input("#cfg-teleperiod", _s(data["tele_period"]))
+            filled += 1
+
+        # --- GPIO assignments → Config tab + Board tab ---
+        gpio_list = (
+            data.get("gpio")
+            or (data.get("user_template") or {}).get("gpio")
+            or (data.get("user_template_esp32") or {}).get("gpio")
+            or []
+        )
+        if gpio_list:
+            gpio_assignments: dict[int, str] = {}
+            for idx, code in enumerate(gpio_list):
+                if isinstance(code, int) and code != 0:
+                    type_id = _to_type(code)
+                    if type_id and type_id != "none":
+                        gpio_assignments[idx] = type_id
+            if gpio_assignments:
+                self._gpio_assignments = gpio_assignments
+                filled += len(gpio_assignments)
+                # Rebuild board diagram and push to Board tab
+                self._rebuild_board_diagram()
+                try:
+                    self.app.sync_gpio_to_board()  # type: ignore[attr-defined]
+                except Exception:
+                    pass
+
+        # --- Rules → Rules tab ---
+        rules_list = data.get("rules") or []
+        if rules_list:
+            try:
+                from tasmota_manager.screens.rules_screen import RulesTab
+                rules_tab: RulesTab = self.app.query_one(RulesTab)  # type: ignore[attr-defined]
+                rules_tab.load_rules_from_backup(rules_list)
+                non_empty = sum(1 for r in rules_list if r)
+                if non_empty:
+                    filled += non_empty
+            except Exception:
+                pass
+
+        return filled
 
     # ------------------------------------------------------------------
     # Helpers

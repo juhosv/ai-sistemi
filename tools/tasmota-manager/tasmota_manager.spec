@@ -19,6 +19,8 @@ a = Analysis(
         (str(ROOT / "profiles"), "profiles"),
         # Textual internal CSS / assets (required for the TUI to render)
         ("tasmota_manager", "tasmota_manager"),
+        # decode-config.py tool for binary .dmp config parsing (placed next to exe)
+        (str(ROOT / "decode_config_tool.py"), "."),
     ],
     hiddenimports=[
         "textual",
