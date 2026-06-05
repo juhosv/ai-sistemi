@@ -373,6 +373,75 @@ TASMOTA_MODULE_TO_BOARD: dict[int, str] = {
     38: "Sonoff Mini",
 }
 
+# ---------------------------------------------------------------------------
+# Default GPIO assignments per known module / board
+# ---------------------------------------------------------------------------
+# Maps device/board name → {gpio_number: type_id}
+# type_id values match the keys in config_builder.GPIO_FUNCTION_TYPES
+# (e.g. "button", "relay", "switch", "led", "dht22", ..., "none")
+#
+# Auto-incrementing instance numbering (Button1, Button2 …) is handled by
+# assign_tasmota_codes() which iterates GPIOs in ascending order.
+# Sonoff 4CH GPIO order: button→0,9,10,14  relay→4,5,12,13
+#   → assign_tasmota_codes gives: Button1=GPIO0, Button2=GPIO9, Button3=GPIO10,
+#     Button4=GPIO14; Relay1=GPIO4, Relay2=GPIO5, Relay3=GPIO12, Relay4=GPIO13.
+#   This differs from the factory firmware (Relay1=GPIO12), but is functionally
+#   equivalent – all 4 channels work; only MQTT Power{n} numbers shift.
+DEFAULT_GPIO_ASSIGNMENTS: dict[str, dict[int, str]] = {
+    # --- Generic boards: no predefined function (user assigns manually) ---
+    "Wemos D1 Mini":          {},
+    "NodeMCU v3 (ESP8266)":   {},
+    "ESP32 DevKit V1":        {},
+    "ESP-WROOM32-CH340":      {},
+    "ESP32-DEVKIT-32UE":      {},
+    "ESP32-S3 DevKit":        {},
+
+    # --- Sonoff ESP8266 devices ------------------------------------------
+    # Sonoff Basic (M1): single relay, single button, status LED
+    "Sonoff Basic": {
+        0:  "button",   # Button1 – front tactile button
+        12: "relay",    # Relay1  – main relay output
+        13: "led",      # Led1    – status LED (blue, inverted in HW)
+    },
+    # Sonoff S20 smart socket (M8): same layout as Basic
+    "Sonoff S20": {
+        0:  "button",
+        12: "relay",
+        13: "led",
+    },
+    # Sonoff TH10/TH16 temperature/humidity (M4): Basic + sensor header on GPIO14
+    "Sonoff TH": {
+        0:  "button",
+        12: "relay",
+        13: "led",
+        14: "dht22",    # Si7021 / AM2301 sensor header (user can change if needed)
+    },
+    # Sonoff Dual (M5): relay control via UART; two tactile buttons on board header
+    "Sonoff Dual": {
+        0:  "button",   # Button1 – rear tactile
+        9:  "button",   # Button2 – rear tactile
+        13: "led",
+    },
+    # Sonoff 4CH (M7): 4-channel DIN-rail switch
+    "Sonoff 4CH": {
+        0:  "button",   # Button1 – channel 1 tactile
+        9:  "button",   # Button2 – channel 2 tactile
+        10: "button",   # Button3 – channel 3 tactile
+        14: "button",   # Button4 – channel 4 tactile
+        4:  "relay",    # Relay3 in factory FW, but Relay1 via assign_tasmota_codes
+        5:  "relay",    # Relay2
+        12: "relay",    # Relay3
+        13: "relay",    # Relay4
+    },
+    # Sonoff Mini R2 (M38): compact in-wall switch
+    "Sonoff Mini": {
+        0:  "button",   # Button1 – onboard button
+        4:  "switch",   # Switch1 – external wall switch input
+        12: "relay",    # Relay1  – load output
+        13: "led",      # Led1    – status LED
+    },
+}
+
 # All selectable device/board names for the Config "Modul" and Board selects.
 # Boards with a visual diagram come first, then Sonoff device-only entries.
 MODULE_SELECT_OPTIONS: list[tuple[str, str]] = (

@@ -290,6 +290,7 @@ from tasmota_manager.board_layouts import (
     BOARD_BY_NAME,
     BoardLayout,
     D1_MINI,
+    DEFAULT_GPIO_ASSIGNMENTS,
     MODULE_SELECT_OPTIONS,
     PinDef,
 )
@@ -730,6 +731,7 @@ class ConfigTab(TabPane):
     def on_select_changed(self, event: Select.Changed) -> None:
         sid = event.select.id or ""
         if sid == "cfg-module":
+            self._apply_module_defaults(str(event.value))
             self._rebuild_board_diagram()
             self._update_preview()
         elif sid == "gpio-func-select":
@@ -1058,6 +1060,24 @@ class ConfigTab(TabPane):
         except Exception:
             pass
         return None
+
+    def _apply_module_defaults(self, module_name: str) -> None:
+        """Replace _gpio_assignments with the factory defaults for *module_name*.
+
+        Generic boards (Wemos D1 Mini, ESP32 DevKit…) have an empty default
+        so selecting them clears any previous assignment from another device.
+        Unknown names are silently ignored – existing assignments stay intact.
+        """
+        if module_name not in DEFAULT_GPIO_ASSIGNMENTS:
+            return
+        self._gpio_assignments = dict(DEFAULT_GPIO_ASSIGNMENTS[module_name])
+        # Clear the currently selected GPIO so the detail panel doesn't show
+        # stale data for a pin that may not exist on the new board.
+        self._selected_gpio = None
+        try:
+            self.query_one("#pin-config-form").display = False
+        except Exception:
+            pass
 
     def _rebuild_board_diagram(self) -> None:
         """Re-mount the InteractiveBoardDiagram for the selected board.
