@@ -585,6 +585,24 @@ InteractiveBoardDiagram {
     align: center middle;
 }
 
+#config-backup-row {
+    height: 3;
+    layout: horizontal;
+    align: left middle;
+    padding: 0 1;
+    margin-top: 1;
+    background: $surface-darken-1;
+}
+
+#cfg-restore-select {
+    width: 40;
+}
+
+#cfg-backup-status {
+    width: 1fr;
+    padding: 0 1;
+}
+
 /* ------------------------------------------------------------------ */
 /* MQTT Monitor tab                                                     */
 /* ------------------------------------------------------------------ */

@@ -625,6 +625,17 @@ class ConfigTab(TabPane):
                 yield Button("📡 Küldés soros porton", id="cfg-send-serial-btn", variant="primary")
                 yield Button("📡 Küldés MQTT-n", id="cfg-send-mqtt-btn", variant="success")
 
+            # --- HTTP backup / restore ----------------------------------
+            with Horizontal(id="config-backup-row"):
+                yield Button("💾 Konfig backup", id="cfg-backup-btn", variant="default")
+                yield Select(
+                    options=[("– nincs backup fájl –", "__none")],
+                    id="cfg-restore-select",
+                    allow_blank=False,
+                )
+                yield Button("📤 Visszatöltés", id="cfg-restore-btn", variant="warning")
+                yield Label("", id="cfg-backup-status")
+
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
@@ -636,6 +647,7 @@ class ConfigTab(TabPane):
         table: DataTable = self.query_one("#config-preview-table")
         table.add_columns("Parancs", "Érték")
         self._refresh_profiles()
+        self._refresh_backup_list()
         self._rebuild_board_diagram()
         # Update serial hint every second
         self.set_interval(1.0, self._update_fetch_hint)
@@ -682,6 +694,10 @@ class ConfigTab(TabPane):
             self._send_via_serial()
         elif bid == "cfg-send-mqtt-btn":
             self._send_via_mqtt()
+        elif bid == "cfg-backup-btn":
+            self.run_worker(self._do_backup(), name="cfg_backup")
+        elif bid == "cfg-restore-btn":
+            self.run_worker(self._do_restore(), name="cfg_restore")
         # --- Group editor buttons ---
         elif bid == "cfg-groups-edit-btn":
             self._toggle_groups_editor()
@@ -1806,6 +1822,105 @@ class ConfigTab(TabPane):
         self.app.sync_gpio_to_board()  # type: ignore[attr-defined]
         mqtt_mgr.publish(f"cmnd/{topic}/Restart", "1")
         self.notify(f"Konfig elküldve MQTT-n: cmnd/{topic}/…", severity="information")
+
+    # ------------------------------------------------------------------
+    # HTTP backup / restore
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _backup_dir() -> "Path":
+        from pathlib import Path
+        from tasmota_manager.config_builder import PROFILES_DIR
+        backup_dir = PROFILES_DIR.parent / "backups"
+        backup_dir.mkdir(exist_ok=True)
+        return backup_dir
+
+    def _refresh_backup_list(self) -> None:
+        """Refresh the restore Select with .dmp files from the backups/ folder."""
+        try:
+            files = sorted(self._backup_dir().glob("*.dmp"), reverse=True)
+            sel: Select = self.query_one("#cfg-restore-select")
+            if files:
+                options = [(f.name, str(f)) for f in files]
+            else:
+                options = [("– nincs backup fájl –", "__none")]
+            sel.set_options(options)
+        except Exception:
+            pass
+
+    async def _do_backup(self) -> None:
+        from datetime import datetime
+        http_bridge = self.app.http_bridge  # type: ignore[attr-defined]
+        status_lbl: Label = self.query_one("#cfg-backup-status")
+
+        if not http_bridge.is_connected:
+            self.notify("HTTP kapcsolat szükséges a backuphoz!", severity="warning")
+            return
+
+        status_lbl.update("[yellow]Backup letöltése…[/yellow]")
+        try:
+            data = await asyncio.get_event_loop().run_in_executor(
+                None, http_bridge.download_config
+            )
+            if not data:
+                status_lbl.update("[red]Sikertelen letöltés[/red]")
+                self.notify("Backup letöltése sikertelen!", severity="error")
+                return
+
+            ip_short = http_bridge.ip.replace("http://", "").replace(".", "_")
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"{ip_short}_{ts}.dmp"
+            backup_path = self._backup_dir() / filename
+            backup_path.write_bytes(data)
+
+            status_lbl.update(f"[green]✓ {filename}  ({len(data)} byte)[/green]")
+            self.notify(
+                f"Backup mentve: {backup_path}",
+                severity="information",
+                timeout=10,
+            )
+            self._refresh_backup_list()
+        except Exception as exc:
+            status_lbl.update(f"[red]Hiba: {exc}[/red]")
+
+    async def _do_restore(self) -> None:
+        http_bridge = self.app.http_bridge  # type: ignore[attr-defined]
+        status_lbl: Label = self.query_one("#cfg-backup-status")
+
+        if not http_bridge.is_connected:
+            self.notify("HTTP kapcsolat szükséges a visszatöltéshez!", severity="warning")
+            return
+
+        sel: Select = self.query_one("#cfg-restore-select")
+        path_str = str(sel.value)
+        if not path_str or path_str == "__none" or sel.value is Select.BLANK:
+            self.notify("Nincs backup fájl kiválasztva!", severity="warning")
+            return
+
+        from pathlib import Path
+        backup_path = Path(path_str)
+        if not backup_path.exists():
+            status_lbl.update("[red]Fájl nem található[/red]")
+            return
+
+        status_lbl.update("[yellow]Visszatöltés…[/yellow]")
+        try:
+            data = backup_path.read_bytes()
+            ok = await asyncio.get_event_loop().run_in_executor(
+                None, http_bridge.upload_config, data
+            )
+            if ok:
+                status_lbl.update("[green]✓ Visszatöltve – az eszköz újraindul[/green]")
+                self.notify(
+                    f"Konfig visszatöltve ({backup_path.name}). Az eszköz újraindul.",
+                    severity="information",
+                    timeout=8,
+                )
+            else:
+                status_lbl.update("[red]Visszatöltés sikertelen[/red]")
+                self.notify("Konfig visszatöltés sikertelen!", severity="error")
+        except Exception as exc:
+            status_lbl.update(f"[red]Hiba: {exc}[/red]")
 
     # ------------------------------------------------------------------
     # Helpers

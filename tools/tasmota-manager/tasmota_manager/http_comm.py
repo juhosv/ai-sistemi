@@ -129,6 +129,53 @@ class TasmotaHttpBridge:
         self.line_buffer.clear()
 
     # ------------------------------------------------------------------
+    # Config backup / restore
+    # ------------------------------------------------------------------
+
+    def download_config(self) -> Optional[bytes]:
+        """Download the full Tasmota config backup via GET /dl.
+
+        Returns raw bytes of the .dmp binary file, or None on error.
+        The /dl endpoint returns the binary config backup, not JSON.
+        Authentication uses the same password as the command endpoint.
+        """
+        if not self._is_connected:
+            return None
+        try:
+            url = f"{self._ip}/dl"
+            params: dict = {}
+            if self._password:
+                params["user"] = "admin"
+                params["password"] = self._password
+            resp = requests.get(url, params=params, timeout=_SEND_TIMEOUT)
+            resp.raise_for_status()
+            return resp.content
+        except Exception:
+            return None
+
+    def upload_config(self, data: bytes) -> bool:
+        """Restore a Tasmota config backup via POST /u2 (multipart upload).
+
+        Tasmota expects a multipart/form-data POST with field name 'u2'.
+        After a successful upload, the device reboots automatically.
+        Returns True if the server responded with 200 OK.
+        """
+        if not self._is_connected:
+            return False
+        try:
+            url = f"{self._ip}/u2"
+            params: dict = {}
+            if self._password:
+                params["user"] = "admin"
+                params["password"] = self._password
+            files = {"u2": ("config.dmp", data, "application/octet-stream")}
+            resp = requests.post(url, params=params, files=files, timeout=_SEND_TIMEOUT)
+            resp.raise_for_status()
+            return True
+        except Exception:
+            return False
+
+    # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
 
