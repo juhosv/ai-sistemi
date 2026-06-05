@@ -217,6 +217,7 @@ class SerialTab(TabPane):
             self._log_line("[dim]── Kapcsolat bontva ──[/dim]")
             self._set_wifi_status(None, None, None, None)
             self._update_log_bar(None)
+            self.app.reset_device_data()  # type: ignore[attr-defined]
         else:
             port = self._selected_port()
             baud = self._selected_baud()
@@ -247,6 +248,7 @@ class SerialTab(TabPane):
             btn.variant = "success"
             lbl.update("● Nincs HTTP kapcsolat")
             self._log_line("[dim]── HTTP kapcsolat bontva ──[/dim]")
+            self.app.reset_device_data()  # type: ignore[attr-defined]
         else:
             ip_input: Input = self.query_one("#http-ip-input")
             pw_input: Input = self.query_one("#http-pw-input")
