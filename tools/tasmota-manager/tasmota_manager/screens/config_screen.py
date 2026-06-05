@@ -1097,6 +1097,10 @@ class ConfigTab(TabPane):
                 return
             board = self._get_current_board()
             if not board:
+                # No dedicated board layout for this module (e.g. Sonoff devices).
+                # Refresh the colors on whatever diagram is currently shown.
+                self._refresh_all_diagram_pins()
+                self._update_preview()
                 return
             try:
                 container = self.query_one("#gpio-diagram-container")
@@ -1176,6 +1180,24 @@ class ConfigTab(TabPane):
                 btn.variant = "default"
         except Exception:
             pass
+
+    def _refresh_all_diagram_pins(self) -> None:
+        """Refresh every pin color on the current diagram to match _gpio_assignments.
+
+        Called when switching to a module that has no dedicated BoardLayout (e.g.
+        Sonoff devices). The existing diagram stays mounted but all its pin buttons
+        are re-colored: assigned pins turn green, previously-assigned-but-now-clear
+        pins revert to default.
+        """
+        try:
+            diag: InteractiveBoardDiagram = self.query_one(InteractiveBoardDiagram)
+        except Exception:
+            return
+        for pin in diag._layout.pins:
+            if pin.gpio is None or pin.is_power or pin.is_uart or pin.adc_only:
+                continue
+            type_id = self._gpio_assignments.get(pin.gpio, "none")
+            diag.update_pin(pin.gpio, type_id)
 
     def _set_pin(self) -> None:
         """Save the selected function for the currently highlighted pin."""
