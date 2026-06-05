@@ -900,10 +900,10 @@ class RulesTab(TabPane):
     # ------------------------------------------------------------------
 
     async def _send_rules(self) -> None:
-        serial_bridge = self.app.serial_bridge  # type: ignore[attr-defined]
+        app = self.app  # type: ignore[attr-defined]
         status_lbl: Label = self.query_one("#rules-send-status")
-        if not serial_bridge.is_connected:
-            self.notify("Nincs soros port kapcsolat! (Serial tab → Csatlakozás)", severity="warning")
+        if not app.serial_bridge.is_connected and not app.http_bridge.is_connected:
+            self.notify("Nincs kapcsolat! (Serial tab → Csatlakozás / HTTP)", severity="warning")
             return
 
         rule_num = self._get_rule_num()
@@ -913,7 +913,7 @@ class RulesTab(TabPane):
         status_lbl.update("[yellow]Küldés…[/yellow]")
         try:
             for cmd in cmds:
-                serial_bridge.send(cmd)
+                app.send_cmd(cmd)
                 await asyncio.sleep(0.3)
             status_lbl.update(f"[green]● {len(cmds)} parancs elküldve[/green]")
             self.notify(f"Rule{rule_num} elküldve ({len(cmds)} parancs)", severity="information")
@@ -925,19 +925,20 @@ class RulesTab(TabPane):
     # ------------------------------------------------------------------
 
     async def _fetch_rules(self) -> None:
-        serial_bridge = self.app.serial_bridge  # type: ignore[attr-defined]
+        app = self.app  # type: ignore[attr-defined]
+        bridge = app.http_bridge if app.http_bridge.is_connected else app.serial_bridge
         status_lbl: Label = self.query_one("#rules-send-status")
-        if not serial_bridge.is_connected:
-            self.notify("Nincs soros port kapcsolat! (Serial tab → Csatlakozás)", severity="warning")
+        if not bridge.is_connected:
+            self.notify("Nincs kapcsolat! (Serial tab → Csatlakozás / HTTP)", severity="warning")
             return
 
         rule_num = self._get_rule_num()
         status_lbl.update("[yellow]Lekérés…[/yellow]")
         try:
-            serial_bridge.clear_buffer()
-            serial_bridge.send(f"Rule{rule_num}")
+            bridge.clear_buffer()
+            app.send_cmd(f"Rule{rule_num}")
             await asyncio.sleep(1.5)
-            lines = list(serial_bridge.line_buffer)
+            lines = list(bridge.line_buffer)
             raw = _parse_rule_response(lines, rule_num)
             if raw:
                 self._fetched_rule_text = raw

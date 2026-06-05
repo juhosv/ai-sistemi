@@ -1436,11 +1436,12 @@ class ConfigTab(TabPane):
     # ------------------------------------------------------------------
 
     async def _fetch_config_from_device(self) -> None:
-        serial_bridge = self.app.serial_bridge  # type: ignore[attr-defined]
+        app = self.app  # type: ignore[attr-defined]
+        bridge = app.http_bridge if app.http_bridge.is_connected else app.serial_bridge
         status_lbl: Label = self.query_one("#cfg-fetch-status")
 
-        if not serial_bridge.is_connected:
-            self.notify("Nincs soros port kapcsolat! (Serial tab → Csatlakozás)", severity="warning")
+        if not bridge.is_connected:
+            self.notify("Nincs kapcsolat! (Serial tab → Csatlakozás / HTTP)", severity="warning")
             return
 
         status_lbl.update("[yellow]Lekérés…[/yellow]")
@@ -1449,28 +1450,28 @@ class ConfigTab(TabPane):
 
         try:
             # Clear buffer so we only parse fresh responses
-            serial_bridge.clear_buffer()
+            bridge.clear_buffer()
 
             # Send all status and config queries
             # Status 0 = full status dump; in Tasmota 15 Topic/Module are ONLY here
-            serial_bridge.send("Status 0")
+            app.send_cmd("Status 0")
             await asyncio.sleep(0.6)
-            serial_bridge.send("Status 1")   # StatusPRM (baudrate, OTA url, etc.)
+            app.send_cmd("Status 1")   # StatusPRM (baudrate, OTA url, etc.)
             await asyncio.sleep(0.4)
-            serial_bridge.send("Status 5")   # active WiFi SSID, IP (no password)
+            app.send_cmd("Status 5")   # active WiFi SSID, IP (no password)
             await asyncio.sleep(0.4)
-            serial_bridge.send("Ssid1")      # configured SSID1 (regardless of active conn.)
+            app.send_cmd("Ssid1")      # configured SSID1 (regardless of active conn.)
             await asyncio.sleep(0.3)
-            serial_bridge.send("Ssid2")      # configured SSID2 (backup network)
+            app.send_cmd("Ssid2")      # configured SSID2 (backup network)
             await asyncio.sleep(0.3)
-            serial_bridge.send("Status 6")   # MQTT host, port, user (no password)
+            app.send_cmd("Status 6")   # MQTT host, port, user (no password)
             await asyncio.sleep(0.4)
-            serial_bridge.send("Status 2")   # Firmware / chip hardware
+            app.send_cmd("Status 2")   # Firmware / chip hardware
             await asyncio.sleep(0.4)
-            serial_bridge.send("GPIO")        # GPIO function assignments
-            await asyncio.sleep(1.0)         # Wait for all responses to arrive
+            app.send_cmd("GPIO")       # GPIO function assignments
+            await asyncio.sleep(1.0)   # Wait for all responses to arrive
 
-            lines = list(serial_bridge.line_buffer)
+            lines = list(bridge.line_buffer)
             filled: list[str] = []
             skipped: list[str] = []
 
@@ -1592,13 +1593,14 @@ class ConfigTab(TabPane):
 
         MQTT lines with individual NET results are also captured from the buffer.
         """
-        serial_bridge = self.app.serial_bridge  # type: ignore[attr-defined]
+        app = self.app  # type: ignore[attr-defined]
+        bridge = app.http_bridge if app.http_bridge.is_connected else app.serial_bridge
         status_lbl: Label = self.query_one("#wifi-scan-status")
         scan_btn: Button = self.query_one("#wifi-scan-btn")
 
-        if not serial_bridge.is_connected:
+        if not bridge.is_connected:
             self.notify(
-                "Nincs soros port kapcsolat!\nCsatlakozz a Serial tabon, majd próbáld újra.",
+                "Nincs kapcsolat!\nCsatlakozz a Serial tabon, majd próbáld újra.",
                 severity="warning",
             )
             return
@@ -1611,8 +1613,8 @@ class ConfigTab(TabPane):
             # Start the scan – results arrive AUTOMATICALLY as individual
             # RSL: RESULT = {"WiFiScan":{"NET1":{...}}} lines after scan completes.
             # There is NO need to send a second query; just wait for the device.
-            serial_bridge.clear_buffer()
-            serial_bridge.send("WifiScan 1")
+            bridge.clear_buffer()
+            app.send_cmd("WifiScan 1")
 
             # Poll the buffer every 0.5 s; give up after SCAN_TIMEOUT seconds.
             # Once the first NET result arrives, wait one extra second for the
@@ -1628,7 +1630,7 @@ class ConfigTab(TabPane):
                 await asyncio.sleep(CHECK_INTERVAL)
                 elapsed += CHECK_INTERVAL
 
-                lines   = list(serial_bridge.line_buffer)
+                lines    = list(bridge.line_buffer)
                 networks = parse_wifi_scan(lines)
 
                 if networks:
@@ -1647,7 +1649,7 @@ class ConfigTab(TabPane):
                     )
 
             # Final parse of everything collected
-            lines    = list(serial_bridge.line_buffer)
+            lines    = list(bridge.line_buffer)
             networks = parse_wifi_scan(lines)
             scan_sel: Select = self.query_one("#wifi-scan-select")
 
@@ -1693,9 +1695,10 @@ class ConfigTab(TabPane):
             pass
 
     def _send_via_serial(self) -> None:
-        serial_bridge = self.app.serial_bridge  # type: ignore[attr-defined]
-        if not serial_bridge.is_connected:
-            self.notify("Nincs soros port kapcsolat!", severity="warning")
+        app = self.app  # type: ignore[attr-defined]
+        serial_bridge = app.serial_bridge
+        if not serial_bridge.is_connected and not app.http_bridge.is_connected:
+            self.notify("Nincs kapcsolat! (Serial tab → Csatlakozás / HTTP)", severity="warning")
             return
         cfg = self._build_config()
         cmds = cfg.to_tasmota_commands()   # list of (cmd, val) tuples
@@ -1732,14 +1735,13 @@ class ConfigTab(TabPane):
 
         self.app.run_worker(  # type: ignore[attr-defined]
             self._do_send_serial(
-                serial_bridge, phase1, module_cmd, gpio_backlog, len(gpio_cmds)
+                phase1, module_cmd, gpio_backlog, len(gpio_cmds)
             ),
             exclusive=False,
         )
 
     async def _do_send_serial(
         self,
-        serial_bridge,
         phase1: list[str],
         module_cmd: str,
         gpio_backlog: str,
@@ -1748,15 +1750,23 @@ class ConfigTab(TabPane):
         """Async worker: sends config in phases, waiting for reboot if Module changes."""
         import asyncio as _asyncio
 
+        app = self.app  # type: ignore[attr-defined]
+        serial_bridge = app.serial_bridge
+
         try:
             # Phase 1: WiFi / MQTT / general settings individually
             if phase1:
-                serial_bridge.comm.send_config_block(phase1, delay=0.2)
+                if serial_bridge.is_connected:
+                    serial_bridge.comm.send_config_block(phase1, delay=0.2)
+                else:
+                    for cmd in phase1:
+                        app.send_cmd(cmd)
+                        await _asyncio.sleep(0.2)
                 await _asyncio.sleep(0.5)
 
             # Phase 2: Module (if needed) – triggers reboot, wait for device to come back
             if module_cmd:
-                serial_bridge.send(module_cmd)
+                app.send_cmd(module_cmd)
                 self.notify(
                     "Module parancs elküldve – várakozás az újraindulásra (6 mp)…",
                     severity="information",
@@ -1766,7 +1776,7 @@ class ConfigTab(TabPane):
 
             # Phase 3: GPIO + Restart (Backlog0, no Module inside)
             if gpio_backlog:
-                serial_bridge.send(gpio_backlog)
+                app.send_cmd(gpio_backlog)
 
             self.notify(
                 f"Konfig elküldve: {len(phase1)} alap parancs"

@@ -151,6 +151,33 @@ TabbedContent ContentSwitcher {
     width: 1fr;
 }
 
+#http-connect-panel {
+    height: 3;
+    layout: horizontal;
+    align: left middle;
+    padding: 0 1;
+    background: $surface-darken-2;
+    margin: 0 0 0 0;
+}
+
+#http-ip-input {
+    width: 22;
+}
+
+#http-pw-input {
+    width: 18;
+}
+
+#http-connect-btn {
+    width: 16;
+}
+
+#http-status-lbl {
+    height: 1;
+    width: 1fr;
+    padding: 0 1;
+}
+
 #serial-quick-cmds {
     height: 3;
     layout: horizontal;

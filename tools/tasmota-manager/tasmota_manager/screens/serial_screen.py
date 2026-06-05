@@ -109,6 +109,21 @@ class SerialTab(TabPane):
                 yield Static("WiFi:", classes="label")
                 yield Label("–", id="serial-wifi-status")
 
+            # --- HTTP API connection panel --------------------------------
+            with Horizontal(id="http-connect-panel"):
+                yield Static("HTTP:", classes="label")
+                yield Input(
+                    placeholder="192.168.1.100",
+                    id="http-ip-input",
+                )
+                yield Input(
+                    placeholder="Jelszó (opcionális)",
+                    id="http-pw-input",
+                    password=True,
+                )
+                yield Button("Csatlakozás", id="http-connect-btn", variant="success")
+                yield Label("● Nincs HTTP kapcsolat", id="http-status-lbl")
+
             # --- Quick commands -----------------------------------------
             with Horizontal(id="serial-quick-cmds"):
                 yield Static("Gyors:", classes="label")
@@ -157,6 +172,8 @@ class SerialTab(TabPane):
             log.clear()
         elif btn_id == "serial-open-log-dir":
             self._open_log_directory()
+        elif btn_id == "http-connect-btn":
+            self._toggle_http_connection()
         elif btn_id.startswith("qcmd_"):
             # Find matching quick command
             cmd_key = btn_id[5:].replace("_", " ")
@@ -205,6 +222,42 @@ class SerialTab(TabPane):
                 self.app.reset_device_data()  # type: ignore[attr-defined]
             except Exception as exc:
                 lbl.update(f"[red]Hiba: {exc}[/red]")
+
+    def _toggle_http_connection(self) -> None:
+        http_bridge = self.app.http_bridge  # type: ignore[attr-defined]
+        btn: Button = self.query_one("#http-connect-btn")
+        lbl: Label = self.query_one("#http-status-lbl")
+
+        if http_bridge.is_connected:
+            http_bridge.disconnect()
+            btn.label = "Csatlakozás"
+            btn.variant = "success"
+            lbl.update("● Nincs HTTP kapcsolat")
+            self._log_line("[dim]── HTTP kapcsolat bontva ──[/dim]")
+        else:
+            ip_input: Input = self.query_one("#http-ip-input")
+            pw_input: Input = self.query_one("#http-pw-input")
+            ip = ip_input.value.strip()
+            pw = pw_input.value.strip()
+            if not ip:
+                lbl.update("[red]Add meg az IP-t![/red]")
+                return
+            lbl.update("[yellow]Kapcsolódás…[/yellow]")
+            try:
+                ok = http_bridge.connect(ip, pw)
+            except Exception as exc:
+                ok = False
+                lbl.update(f"[red]Hiba: {exc}[/red]")
+                return
+            if ok:
+                btn.label = "Lecsatlakozás"
+                btn.variant = "error"
+                lbl.update(f"[green]● {http_bridge.ip}[/green]")
+                self._log_line(f"[green]── HTTP kapcsolódva: {http_bridge.ip} ──[/green]")
+                # Clear stale data from any previously connected device
+                self.app.reset_device_data()  # type: ignore[attr-defined]
+            else:
+                lbl.update(f"[red]Nem elérhető: {ip}[/red]")
 
     def _send_command(self) -> None:
         inp: Input = self.query_one("#serial-cmd-input")

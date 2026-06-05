@@ -897,7 +897,7 @@ class BoardTab(TabPane):
                 now = _time_module.monotonic()
                 if now - _last_switch_poll >= 1.0:
                     _last_switch_poll = now
-                    serial_bridge.send("Status 10")
+                    self.app.send_cmd("Status 10")  # type: ignore[attr-defined]
 
     async def _mqtt_state_listener(self) -> None:
         """Consume MQTT tele/STATE and tele/SENSOR messages."""
@@ -932,11 +932,12 @@ class BoardTab(TabPane):
 
     async def _poll_device(self) -> None:
         """Send Status queries + individual GPIOx commands to get full device state."""
-        serial_bridge = self.app.serial_bridge  # type: ignore[attr-defined]
+        app = self.app  # type: ignore[attr-defined]
+        bridge = app.http_bridge if app.http_bridge.is_connected else app.serial_bridge
         if self._polling:
             return
-        if not serial_bridge.is_connected:
-            self.notify("Nincs soros port kapcsolat! (Serial tab → Csatlakozás)",
+        if not bridge.is_connected:
+            self.notify("Nincs kapcsolat! (Serial tab → Csatlakozás / HTTP)",
                         severity="warning", timeout=5)
             return
         self._polling = True
@@ -944,7 +945,7 @@ class BoardTab(TabPane):
         btn.disabled = True
         btn.label = "Lekérés…"
         try:
-            serial_bridge.clear_buffer()
+            bridge.clear_buffer()
 
             # Phase 1: standard Status queries
             for cmd, delay in [
@@ -956,17 +957,17 @@ class BoardTab(TabPane):
                 ("Status 10", 0.6),   # sensors + energy
                 ("Status 11", 0.6),   # GPIO states, uptime
             ]:
-                serial_bridge.send(cmd)
+                app.send_cmd(cmd)
                 await asyncio.sleep(delay)
 
             # Phase 2: bulk GPIO assignment query
             # "GPIO" (no argument) returns all current GPIO assignments at once.
             # Falls back to individual GPIOx queries if bulk returns nothing.
             btn.label = "GPIO…"
-            serial_bridge.send("GPIO")
+            app.send_cmd("GPIO")
             await asyncio.sleep(0.8)   # wait for bulk response
 
-            lines = list(serial_bridge.line_buffer)
+            lines = list(bridge.line_buffer)
             self._apply_status1(_parse_status1(lines))
             self._apply_status2(_parse_status2(lines))
             self._apply_status4(_parse_status4(lines))
@@ -993,12 +994,12 @@ class BoardTab(TabPane):
                     pin.gpio for pin in self._current_board.pins
                     if pin.gpio is not None and not pin.is_power and not pin.is_uart
                 ]
-                serial_bridge.clear_buffer()
+                bridge.clear_buffer()
                 for gpio_num in board_gpio_nums:
-                    serial_bridge.send(f"GPIO{gpio_num}")
+                    app.send_cmd(f"GPIO{gpio_num}")
                     await asyncio.sleep(0.1)
                 await asyncio.sleep(0.5)
-                lines2 = list(serial_bridge.line_buffer)
+                lines2 = list(bridge.line_buffer)
                 gpio_from_device2 = _parse_gpio_from_device(lines2)
                 if gpio_from_device2:
                     self.update_gpio_assignments(gpio_from_device2, from_device=True)
@@ -1646,14 +1647,15 @@ class BoardTab(TabPane):
                 sent = True
 
         if not sent:
-            serial_bridge = self.app.serial_bridge  # type: ignore[attr-defined]
-            if serial_bridge.is_connected:
-                serial_bridge.send(f"{cmd} {value}")
-                self.notify(f"Serial → {cmd} {value}", severity="information")
+            app = self.app  # type: ignore[attr-defined]
+            if app.serial_bridge.is_connected or app.http_bridge.is_connected:
+                app.send_cmd(f"{cmd} {value}")
+                conn_type = "HTTP" if app.http_bridge.is_connected else "Serial"
+                self.notify(f"{conn_type} → {cmd} {value}", severity="information")
                 sent = True
             else:
                 self.notify(
-                    "Nincs soros port kapcsolat! (Serial tab → Csatlakozás)",
+                    "Nincs kapcsolat! (Serial tab → Csatlakozás / HTTP)",
                     severity="error", timeout=5,
                 )
                 return
@@ -1668,19 +1670,20 @@ class BoardTab(TabPane):
 
     async def _gpio_diagnostics(self) -> None:
         """Send GPIO command and show raw response lines in a notification."""
-        serial_bridge = self.app.serial_bridge  # type: ignore[attr-defined]
-        if not serial_bridge.is_connected:
-            self.notify("Nincs soros port kapcsolat!", severity="warning")
+        app = self.app  # type: ignore[attr-defined]
+        bridge = app.http_bridge if app.http_bridge.is_connected else app.serial_bridge
+        if not bridge.is_connected:
+            self.notify("Nincs kapcsolat!", severity="warning")
             return
 
-        serial_bridge.clear_buffer()
+        bridge.clear_buffer()
         # Try both the bulk GPIO command and GPIO32 individually
-        serial_bridge.send("GPIO")
+        app.send_cmd("GPIO")
         await asyncio.sleep(1.0)
-        serial_bridge.send("GPIO32")
+        app.send_cmd("GPIO32")
         await asyncio.sleep(0.5)
 
-        lines = list(serial_bridge.line_buffer)
+        lines = list(bridge.line_buffer)
 
         # Collect lines that seem related to GPIO response
         relevant = [l for l in lines if "GPIO" in l and l.startswith(">") is False]
@@ -1697,14 +1700,15 @@ class BoardTab(TabPane):
     async def _verify_relay_state(self) -> None:
         """Wait briefly then query Status 11 to confirm relay state changed."""
         await asyncio.sleep(0.6)
-        serial_bridge = self.app.serial_bridge  # type: ignore[attr-defined]
-        if not serial_bridge.is_connected:
+        app = self.app  # type: ignore[attr-defined]
+        bridge = app.http_bridge if app.http_bridge.is_connected else app.serial_bridge
+        if not bridge.is_connected:
             return
         try:
-            serial_bridge.clear_buffer()
-            serial_bridge.send("Status 11")
+            bridge.clear_buffer()
+            app.send_cmd("Status 11")
             await asyncio.sleep(0.5)
-            lines = list(serial_bridge.line_buffer)
+            lines = list(bridge.line_buffer)
             self._apply_status11(_parse_status11(lines))
         except Exception:
             pass

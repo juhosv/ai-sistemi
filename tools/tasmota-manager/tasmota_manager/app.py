@@ -9,6 +9,7 @@ from textual.widgets import Footer, Header, Select, TabbedContent, TabPane
 from tasmota_manager.board_layouts import BOARD_BY_NAME
 from tasmota_manager.mqtt_client import MQTTManager
 from tasmota_manager.serial_comm import AsyncSerialBridge
+from tasmota_manager.http_comm import TasmotaHttpBridge
 from tasmota_manager.screens.flash_screen import FlashTab
 from tasmota_manager.screens.serial_screen import SerialTab
 from tasmota_manager.screens.config_screen import ConfigTab
@@ -42,7 +43,19 @@ class TasmoApp(App):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.serial_bridge = AsyncSerialBridge()
+        self.http_bridge = TasmotaHttpBridge()
         self.mqtt_manager = MQTTManager()
+
+    # ------------------------------------------------------------------
+    # Unified command sender
+    # ------------------------------------------------------------------
+
+    def send_cmd(self, cmd: str) -> None:
+        """Send a Tasmota command via HTTP (if connected) or serial fallback."""
+        if self.http_bridge.is_connected:
+            self.http_bridge.send(cmd)
+        elif self.serial_bridge.is_connected:
+            self.serial_bridge.send(cmd)
 
     # ------------------------------------------------------------------
     # Layout
