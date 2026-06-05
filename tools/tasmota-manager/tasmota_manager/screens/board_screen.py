@@ -1381,6 +1381,11 @@ class BoardTab(TabPane):
         self._sensor_data      = {}
         self._energy_data      = {}
         self._uptime           = ""
+        # Clear uptime label directly (only updated on new data, not in panel methods)
+        try:
+            self.query_one("#board-uptime-label").update("")
+        except Exception:
+            pass
         # Clear diagram
         try:
             diag: BoardDiagram = self.query_one("#board-diagram", BoardDiagram)
@@ -1781,6 +1786,8 @@ class BoardTab(TabPane):
                 self.query_one("#board-dev-heap").update(
                     f"[dim]Szabad RAM:[/dim] [{color}]{self._dev_heap} kB[/{color}]"
                 )
+            else:
+                self.query_one("#board-dev-heap").update("[dim]Szabad RAM: –[/dim]")
         except Exception:
             pass
 
@@ -1797,10 +1804,14 @@ class BoardTab(TabPane):
                 self.query_one("#board-mqtt-client").update(
                     f"[dim]Kliens:[/dim]  {self._mqtt_client}"
                 )
+            else:
+                self.query_one("#board-mqtt-client").update("[dim]Kliens: –[/dim]")
             if self._mqtt_count is not None and self._mqtt_count > 0:
                 self.query_one("#board-mqtt-count").update(
                     f"[dim]Kapcsolódások:[/dim] {self._mqtt_count}"
                 )
+            else:
+                self.query_one("#board-mqtt-count").update("[dim]Kapcsolódások: –[/dim]")
         except Exception:
             pass
 
