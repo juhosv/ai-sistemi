@@ -1987,12 +1987,14 @@ class ConfigTab(TabPane):
             )
             return None
         try:
-            result = await asyncio.get_event_loop().run_in_executor(
+            loop = asyncio.get_running_loop()
+            result = await loop.run_in_executor(
                 None,
                 lambda: subprocess.run(
                     [python, str(script),
-                     "-s", dmp_path.resolve().as_uri(),
+                     "-s", str(dmp_path.resolve()),   # plain path (not URI) for reliability
                      "-T", "json",
+                     "-S",                            # force stdout output
                      "--json-show-pw",
                      "--json-indent", "-1"],
                     capture_output=True,
@@ -2000,13 +2002,21 @@ class ConfigTab(TabPane):
                     timeout=30,
                 )
             )
-            if result.returncode != 0:
+            if result.returncode not in (0, 1):  # 0=ok, 1=restore skipped (non-fatal)
                 self.notify(
-                    f"decode-config hiba (exit {result.returncode}):\n{result.stderr[:200]}",
-                    severity="error", timeout=10,
+                    f"decode-config hiba (exit {result.returncode}):\n"
+                    f"{(result.stderr or result.stdout)[:300]}",
+                    severity="error", timeout=12,
                 )
                 return None
-            return json.loads(result.stdout)
+            stdout = result.stdout.strip()
+            if not stdout:
+                self.notify(
+                    f"decode-config: üres kimenet\nstderr: {result.stderr[:300]}",
+                    severity="error", timeout=12,
+                )
+                return None
+            return json.loads(stdout)
         except Exception as exc:
             self.notify(f"Parse hiba: {exc}", severity="error")
             return None
