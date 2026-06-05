@@ -1087,10 +1087,8 @@ class ConfigTab(TabPane):
         return {k: v for k, v in self._gpio_assignments.items() if v and v != "none"}
 
     def clear_device_data(self) -> None:
-        """Reset device-specific state (called when a new serial connection is made)."""
-        self._gpio_assignments = {}
-        self._selected_gpio = None
-        self._rebuild_board_diagram()
+        """Reset all device-specific state (on connect or disconnect)."""
+        self._reset_config()
 
     def _get_current_board(self) -> Optional[BoardLayout]:
         """Return the BoardLayout matching the currently selected module."""
