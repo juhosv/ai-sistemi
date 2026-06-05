@@ -349,6 +349,7 @@ class InteractiveBoardDiagram(Widget):
         super().__init__(**kwargs)
         self._layout = layout
         self._assignments = dict(assignments)
+        self._instance_labels: dict[int, str] = compute_gpio_instances(self._assignments)
 
     def compose(self) -> ComposeResult:
         left_pins = sorted(
@@ -383,7 +384,8 @@ class InteractiveBoardDiagram(Widget):
             has_assign = bool(assigned and assigned != "none")
             boot = "⚠" if pin.boot_sensitive else ""
             if has_assign:
-                label = f"{boot}{pin.label} ✓"
+                inst = self._instance_labels.get(gpio, "")
+                label = f"{boot}{pin.label} {inst}" if inst else f"{boot}{pin.label} ✓"
                 variant = "success"
             else:
                 label = f"{boot}{pin.label}"
@@ -404,21 +406,31 @@ class InteractiveBoardDiagram(Widget):
             return Static(f" {pin.label} ", classes=classes)
 
     def update_pin(self, gpio_num: int, type_id: str) -> None:
-        """Refresh a single pin button after an assignment change."""
-        try:
-            btn: Button = self.query_one(f"#cfgpin_{gpio_num}")
-            pin = self._layout.pin_by_gpio(gpio_num)
-            pin_label = pin.label if pin else f"G{gpio_num}"
-            boot = "⚠" if (pin and pin.boot_sensitive) else ""
-            if type_id and type_id != "none":
-                btn.label = f"{boot}{pin_label} ✓"
+        """Refresh a single pin button after an assignment change.
+
+        After updating the assignment, all instance labels are recomputed so
+        that e.g. deleting Relay1 correctly promotes Relay2 → Relay1 on other
+        pins, and every visible pin button gets an up-to-date label.
+        """
+        self._assignments[gpio_num] = type_id
+        self._instance_labels = compute_gpio_instances(self._assignments)
+        # Refresh every visible pin so instance numbers stay consistent.
+        for pin in self._layout.pins:
+            if pin.gpio is None or pin.is_power or pin.is_uart or pin.adc_only:
+                continue
+            try:
+                btn: Button = self.query_one(f"#cfgpin_{pin.gpio}")
+            except Exception:
+                continue
+            t = self._assignments.get(pin.gpio, "none") or "none"
+            boot = "⚠" if pin.boot_sensitive else ""
+            if t and t != "none":
+                inst = self._instance_labels.get(pin.gpio, "")
+                btn.label = f"{boot}{pin.label} {inst}" if inst else f"{boot}{pin.label} ✓"
                 btn.variant = "success"
             else:
-                btn.label = f"{boot}{pin_label}"
+                btn.label = f"{boot}{pin.label}"
                 btn.variant = "default"
-            self._assignments[gpio_num] = type_id
-        except Exception:
-            pass
 
 
 class ConfigTab(TabPane):
