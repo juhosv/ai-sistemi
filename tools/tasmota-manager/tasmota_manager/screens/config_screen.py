@@ -670,14 +670,16 @@ class ConfigTab(TabPane):
         self._update_fetch_hint()
 
     def _update_fetch_hint(self) -> None:
-        """Show/hide serial connection hint based on current connection state."""
+        """Show/hide connection hint based on current connection state."""
         try:
-            serial_bridge = self.app.serial_bridge  # type: ignore[attr-defined]
+            app = self.app  # type: ignore[attr-defined]
             lbl: Label = self.query_one("#cfg-fetch-hint")
-            if serial_bridge.is_connected:
+            if app.http_bridge.is_connected:
+                lbl.update("[dim]  HTTP kapcsolat aktív[/dim]")
+            elif app.serial_bridge.is_connected:
                 lbl.update("")
             else:
-                lbl.update("[dim]  Soros portkapcsolat szükséges (Serial tab → Csatlakozás)[/dim]")
+                lbl.update("[dim]  Kapcsolat szükséges (Serial tab → Csatlakozás / HTTP)[/dim]")
         except Exception:
             pass
 
@@ -1615,7 +1617,8 @@ class ConfigTab(TabPane):
             # --- Parse Status 2 (chip/hardware detection) --------------
             chip = parse_status2(lines)
             if chip:
-                serial_bridge.detected_chip = chip
+                # Store detected chip on whichever bridge is active.
+                bridge.detected_chip = chip
                 status_lbl.update(f"[green]● Chip: {chip}[/green]")
                 filled.append(f"Chip: {chip}")
             else:

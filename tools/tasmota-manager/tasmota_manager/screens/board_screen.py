@@ -806,8 +806,13 @@ class BoardTab(TabPane):
                 await self._poll_device()
 
     async def _serial_state_monitor(self) -> None:
-        """Real-time serial line monitor: apply POWER/Switch/Sensor state changes."""
-        serial_bridge = self.app.serial_bridge  # type: ignore[attr-defined]
+        """Real-time state-line monitor: apply POWER/Switch/Sensor state changes.
+
+        Works with both serial and HTTP bridges: reads from whichever bridge's
+        state_queue is currently active.  For HTTP the queue is populated each
+        time send_cmd() returns a response (request/response model), so live
+        updates from physical button presses require the auto-poll to be active.
+        """
         _POWER_RE = re.compile(r"POWER(\d*)\s*=\s*(ON|OFF)", re.IGNORECASE)
         _RESULT_POWER_RE = re.compile(r'"POWER(\d*)"\s*:\s*"(ON|OFF)"', re.IGNORECASE)
         _SWITCH_RE = re.compile(r'"Switch(\d+)"\s*:\s*"(ON|OFF)"', re.IGNORECASE)
@@ -820,8 +825,16 @@ class BoardTab(TabPane):
         _last_switch_poll: float = 0.0
 
         while True:
+            app = self.app  # type: ignore[attr-defined]
+            if app.http_bridge.is_connected:
+                active_queue = app.http_bridge.state_queue
+            elif app.serial_bridge.is_connected:
+                active_queue = app.serial_bridge.state_queue
+            else:
+                await asyncio.sleep(0.5)
+                continue
             try:
-                line = await asyncio.wait_for(serial_bridge.state_queue.get(), timeout=1.0)
+                line = await asyncio.wait_for(active_queue.get(), timeout=1.0)
             except asyncio.TimeoutError:
                 continue
             except Exception:
