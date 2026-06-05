@@ -331,6 +331,122 @@ ALL_BOARDS: list[BoardLayout] = [
 ]
 BOARD_BY_NAME: dict[str, BoardLayout] = {b.name: b for b in ALL_BOARDS}
 
+# ---------------------------------------------------------------------------
+# Sonoff device board layouts (ESP8266)
+# Only the externally relevant / configurable pins are listed.
+# Labels use Sonoff silkscreen names: S1-S4 (buttons), R1-R4 (relays), LED.
+# GPIO9 and GPIO10 are connected to SPI flash on standard ESP8266 but
+# Sonoff 4CH routes them to tactile buttons – marked boot_sensitive as a caution.
+# ---------------------------------------------------------------------------
+
+SONOFF_BASIC = BoardLayout(
+    name="Sonoff Basic",
+    chip="ESP8266",
+    display_width=40,
+    gpio_to_dpin={},
+    pins=[
+        PinDef("S1",  0,    "left",  0),            # Button1
+        PinDef("LED", 13,   "left",  1),            # Status LED
+        PinDef("TX",  1,    "right", 0, is_uart=True),
+        PinDef("RX",  3,    "right", 1, is_uart=True),
+        PinDef("R1",  12,   "right", 2),            # Relay1
+        PinDef("3V3", None, "right", 3, is_power=True),
+        PinDef("GND", None, "right", 4, is_power=True),
+    ],
+)
+
+SONOFF_S20 = BoardLayout(
+    name="Sonoff S20",
+    chip="ESP8266",
+    display_width=40,
+    gpio_to_dpin={},
+    pins=[
+        PinDef("S1",  0,    "left",  0),            # Button1
+        PinDef("LED", 13,   "left",  1),            # Status LED
+        PinDef("TX",  1,    "right", 0, is_uart=True),
+        PinDef("RX",  3,    "right", 1, is_uart=True),
+        PinDef("R1",  12,   "right", 2),            # Relay1
+        PinDef("3V3", None, "right", 3, is_power=True),
+        PinDef("GND", None, "right", 4, is_power=True),
+    ],
+)
+
+SONOFF_TH = BoardLayout(
+    name="Sonoff TH",
+    chip="ESP8266",
+    display_width=40,
+    gpio_to_dpin={},
+    pins=[
+        PinDef("S1",     0,    "left",  0),         # Button1
+        PinDef("LED",    13,   "left",  1),         # Status LED
+        PinDef("Sensor", 14,   "left",  2),         # Sensor header (DHT/DS18B20)
+        PinDef("TX",  1,    "right", 0, is_uart=True),
+        PinDef("RX",  3,    "right", 1, is_uart=True),
+        PinDef("R1",     12,   "right", 2),         # Relay1
+        PinDef("3V3",    None, "right", 3, is_power=True),
+        PinDef("GND",    None, "right", 4, is_power=True),
+    ],
+)
+
+SONOFF_DUAL = BoardLayout(
+    name="Sonoff Dual",
+    chip="ESP8266",
+    display_width=40,
+    gpio_to_dpin={},
+    pins=[
+        PinDef("S1",  0,    "left",  0),            # Button1
+        PinDef("S2",  9,    "left",  1, boot_sensitive=True),  # Button2
+        PinDef("LED", 13,   "left",  2),            # Status LED
+        PinDef("TX",  1,    "right", 0, is_uart=True),  # Relay control via UART
+        PinDef("RX",  3,    "right", 1, is_uart=True),
+        PinDef("3V3", None, "right", 2, is_power=True),
+        PinDef("GND", None, "right", 3, is_power=True),
+    ],
+)
+
+SONOFF_4CH = BoardLayout(
+    name="Sonoff 4CH",
+    chip="ESP8266",
+    display_width=44,
+    gpio_to_dpin={},
+    pins=[
+        # Left column: 4 tactile buttons
+        PinDef("S1",  0,    "left",  0),            # Button1
+        PinDef("S2",  9,    "left",  1, boot_sensitive=True),  # Button2
+        PinDef("S3",  10,   "left",  2, boot_sensitive=True),  # Button3
+        PinDef("S4",  14,   "left",  3),            # Button4
+        # Right column: 4 relay outputs
+        PinDef("R1",  12,   "right", 0),            # Relay1
+        PinDef("R2",  5,    "right", 1),            # Relay2
+        PinDef("R3",  4,    "right", 2),            # Relay3
+        PinDef("R4",  13,   "right", 3),            # Relay4
+    ],
+)
+
+SONOFF_MINI = BoardLayout(
+    name="Sonoff Mini",
+    chip="ESP8266",
+    display_width=40,
+    gpio_to_dpin={},
+    pins=[
+        PinDef("S1",  0,    "left",  0),            # Button1 (onboard)
+        PinDef("SW",  4,    "left",  1),            # Switch1 (external wall switch)
+        PinDef("LED", 13,   "left",  2),            # Status LED
+        PinDef("TX",  1,    "right", 0, is_uart=True),
+        PinDef("RX",  3,    "right", 1, is_uart=True),
+        PinDef("R1",  12,   "right", 2),            # Relay1
+        PinDef("3V3", None, "right", 3, is_power=True),
+        PinDef("GND", None, "right", 4, is_power=True),
+    ],
+)
+
+SONOFF_BOARDS: list[BoardLayout] = [
+    SONOFF_BASIC, SONOFF_S20, SONOFF_TH, SONOFF_DUAL, SONOFF_4CH, SONOFF_MINI
+]
+
+# Merge Sonoff boards into the lookup so _get_current_board() finds them.
+BOARD_BY_NAME.update({b.name: b for b in SONOFF_BOARDS})
+
 CHIP_DEFAULT_BOARD: dict[str, str] = {
     "ESP8266":  "Wemos D1 Mini",
     "ESP32":    "ESP32 DevKit V1",
