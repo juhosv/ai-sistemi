@@ -42,26 +42,11 @@ _MAX_LOG_LINES = 500
 class MQTTTab(TabPane):
     """Real-time MQTT broker monitor."""
 
-    DEFAULT_CSS = ""
     connected: reactive[bool] = reactive(False)
     message_count: reactive[int] = reactive(0)
 
     # topic tree structure: {prefix: {device: {command: last_ts}}}
     _topic_tree_data: dict[str, dict[str, dict[str, str]]] = {}
-
-    DEFAULT_CSS = """
-    #mqtt-connect-fields {
-        height: auto;
-    }
-    #mqtt-connect-actions {
-        height: auto;
-        margin-top: 0;
-    }
-    #mqtt-conn-status {
-        min-width: 20;
-        content-align: left middle;
-    }
-    """
 
     def compose(self) -> ComposeResult:
         with Vertical(id="mqtt-tab"):

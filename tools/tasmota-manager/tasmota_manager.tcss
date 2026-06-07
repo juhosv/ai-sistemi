@@ -40,6 +40,19 @@ TabbedContent ContentSwitcher {
     margin: 0 0 1 0;
 }
 
+/* Input widgets inside .row grow to fill remaining width */
+.row Input {
+    width: 1fr;
+}
+
+/* Small reveal button next to password fields */
+.reveal-btn {
+    width: 5;
+    min-width: 3;
+    height: 3;
+    padding: 0 1;
+}
+
 .label {
     width: 18;
     color: $text-muted;
@@ -613,10 +626,22 @@ InteractiveBoardDiagram {
 }
 
 #mqtt-connect-row {
+    height: auto;
+    layout: vertical;
+    margin: 0 0 1 0;
+}
+
+#mqtt-connect-fields {
     height: 3;
     layout: horizontal;
     align: left middle;
-    margin: 0 0 1 0;
+}
+
+#mqtt-connect-actions {
+    height: 3;
+    layout: horizontal;
+    align: left middle;
+    margin-top: 0;
 }
 
 #mqtt-host-input {

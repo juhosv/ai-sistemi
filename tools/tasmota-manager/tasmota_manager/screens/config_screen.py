@@ -781,8 +781,13 @@ class ConfigTab(TabPane):
                 "reveal-pass2":    "#cfg-pass2",
                 "reveal-mqtt-pass": "#cfg-mqtt-pass",
             }
+            btn_el: Button = self.query_one(f"#{bid}", Button)
             inp: Input = self.query_one(pass_id_map[bid], Input)
+            # Toggle password masking; preserve cursor position
+            current_val = inp.value
             inp.password = not inp.password
+            inp.value = current_val
+            btn_el.label = "🔒" if inp.password else "👁"
         elif bid.startswith("cfgpin_"):
             gpio_num = int(bid.split("_", 1)[1])
             self._show_pin_config(gpio_num)
