@@ -8,14 +8,43 @@ SCRIPT_DIR = Path(__file__).parent
 MD_FILE    = SCRIPT_DIR / "README.md"
 PDF_FILE   = SCRIPT_DIR / "SmartBlue-TasmotaManager-UserGuide.pdf"
 
+FONT_DIR = "file:///C:/Windows/Fonts"
+
 CSS = """
 @page {
     size: A4;
     margin: 2cm 2cm 2.5cm 2cm;
 }
 
+@font-face {
+    font-family: "MyArial";
+    src: url("FONT_DIR/arial.ttf");
+    font-weight: normal;
+    font-style: normal;
+}
+
+@font-face {
+    font-family: "MyArial";
+    src: url("FONT_DIR/arialbd.ttf");
+    font-weight: bold;
+    font-style: normal;
+}
+
+@font-face {
+    font-family: "MyArial";
+    src: url("FONT_DIR/ariali.ttf");
+    font-weight: normal;
+    font-style: italic;
+}
+
+@font-face {
+    font-family: "MyCourier";
+    src: url("FONT_DIR/cour.ttf");
+    font-weight: normal;
+}
+
 body {
-    font-family: Arial, Helvetica, sans-serif;
+    font-family: "MyArial", Arial, sans-serif;
     font-size: 10pt;
     color: #222;
     line-height: 1.55;
@@ -54,7 +83,7 @@ h4 {
 p { margin: 6px 0; }
 
 code {
-    font-family: "Courier New", Courier, monospace;
+    font-family: "MyCourier", "Courier New", monospace;
     font-size: 9pt;
     background: #f4f4f4;
     padding: 1px 4px;
@@ -66,7 +95,7 @@ pre {
     background: #f4f4f4;
     border-left: 4px solid #003366;
     padding: 10px 14px;
-    font-family: "Courier New", Courier, monospace;
+    font-family: "MyCourier", "Courier New", monospace;
     font-size: 8.5pt;
     white-space: pre-wrap;
     word-wrap: break-word;
@@ -126,9 +155,8 @@ hr {
 
 a { color: #004080; }
 
-/* Screenshot placeholder – skip missing images gracefully */
 img { max-width: 100%; }
-"""
+""".replace("FONT_DIR", FONT_DIR)
 
 def md_to_pdf(md_path: Path, pdf_path: Path) -> bool:
     md_text = md_path.read_text(encoding="utf-8")
