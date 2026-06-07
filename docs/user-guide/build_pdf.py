@@ -133,9 +133,16 @@ img { max-width: 100%; }
 def md_to_pdf(md_path: Path, pdf_path: Path) -> bool:
     md_text = md_path.read_text(encoding="utf-8")
 
-    # Remove screenshot img tags (missing files would break xhtml2pdf)
-    import re
-    md_text = re.sub(r'!\[.*?\]\(screenshots/[^\)]+\)', '', md_text)
+    import re, base64
+    # Embed screenshots as base64 data URIs so xhtml2pdf can render them
+    def embed_image(m):
+        alt  = m.group(1)
+        path = SCRIPT_DIR / m.group(2)
+        if path.exists():
+            data = base64.b64encode(path.read_bytes()).decode()
+            return f'<img src="data:image/png;base64,{data}" alt="{alt}" style="max-width:100%;margin:8px 0;"/>'
+        return f'<p style="color:#888;font-style:italic;">[Kép: {alt}]</p>'
+    md_text = re.sub(r'!\[([^\]]*)\]\((screenshots/[^\)]+)\)', embed_image, md_text)
     md_text = re.sub(r'\*\(ha a kép hiányzik.*?\)\*', '', md_text)
 
     html_body = markdown.markdown(
