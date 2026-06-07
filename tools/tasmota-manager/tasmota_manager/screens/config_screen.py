@@ -479,25 +479,9 @@ class ConfigTab(TabPane):
             with Vertical(id="cfg-groups-editor", classes="hidden"):
                 yield Static("Csoportok kezelése", classes="section-title")
                 with Horizontal(id="cfg-groups-editor-inner"):
-                    # Left: region management
-                    with Vertical(id="cfg-groups-region-col"):
-                        yield Static("Régiók", classes="subsection-title")
-                        yield Select(
-                            options=self._region_options(),
-                            id="cfg-edit-region-select",
-                            allow_blank=True,
-                            prompt="– válassz régiót –",
-                        )
-                        with Horizontal(classes="row"):
-                            yield Input(placeholder="Régió azonosító (pl. hu_eszak)", id="cfg-new-region-id")
-                            yield Input(placeholder="Megjelenítendő név", id="cfg-new-region-name")
-                            yield Button("+ Hozzáad", id="cfg-add-region-btn", variant="success")
-                        with Horizontal(classes="row"):
-                            yield Button("🗑 Régió törlése", id="cfg-del-region-btn", variant="error")
-                            yield Button("✦ Új régió", id="cfg-new-region-btn", variant="default")
-                    # Right: user management
+                    # Left: user management
                     with Vertical(id="cfg-groups-user-col"):
-                        yield Static("Userek (kiválasztott régióban)", classes="subsection-title")
+                        yield Static("Userek", classes="subsection-title")
                         yield Select(
                             options=[],
                             id="cfg-edit-user-select",
@@ -511,6 +495,22 @@ class ConfigTab(TabPane):
                         with Horizontal(classes="row"):
                             yield Button("🗑 User törlése", id="cfg-del-user-btn", variant="error")
                             yield Button("✦ Új user", id="cfg-new-user-btn", variant="default")
+                    # Right: region management
+                    with Vertical(id="cfg-groups-region-col"):
+                        yield Static("Régiók (kiválasztott userhez)", classes="subsection-title")
+                        yield Select(
+                            options=self._region_options(),
+                            id="cfg-edit-region-select",
+                            allow_blank=True,
+                            prompt="– válassz régiót –",
+                        )
+                        with Horizontal(classes="row"):
+                            yield Input(placeholder="Régió azonosító (pl. hu_eszak)", id="cfg-new-region-id")
+                            yield Input(placeholder="Megjelenítendő név", id="cfg-new-region-name")
+                            yield Button("+ Hozzáad", id="cfg-add-region-btn", variant="success")
+                        with Horizontal(classes="row"):
+                            yield Button("🗑 Régió törlése", id="cfg-del-region-btn", variant="error")
+                            yield Button("✦ Új régió", id="cfg-new-region-btn", variant="default")
 
             # --- Device fetch row ---------------------------------------
             with Horizontal(id="config-fetch-row"):
