@@ -611,7 +611,7 @@ class RulesTab(TabPane):
 
             # --- Send row --------------------------------------------------
             with Horizontal(id="rules-send-row"):
-                yield Button("📡 Küldés soros porton", id="rules-send-serial-btn", variant="primary")
+                yield Button("📡 Küldés eszközre", id="rules-send-serial-btn", variant="primary")
                 yield Label("", id="rules-send-status", classes="hint")
 
             # --- Fetched rule panel (only visible after fetch) ---------------
@@ -635,11 +635,25 @@ class RulesTab(TabPane):
 
     def on_mount(self) -> None:
         self.set_interval(0.5, self._refresh_preview)
+        self.set_interval(1.0, self._update_button_states)
         self.set_timer(0.1, self._update_slot_buttons)
 
     def on_select_changed(self, event: Select.Changed) -> None:
         if event.select.id == "rules-rule-select":
             self._update_slot_buttons()
+
+    def _update_button_states(self) -> None:
+        """Enable/disable fetch/send buttons based on connection state."""
+        try:
+            app = self.app  # type: ignore[attr-defined]
+            connected = app.any_device_connected()
+            for btn_id in ("#rules-fetch-btn", "#rules-send-serial-btn"):
+                try:
+                    self.query_one(btn_id, Button).disabled = not connected
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     # Public: called by app when tab is activated
@@ -896,14 +910,48 @@ class RulesTab(TabPane):
             pass
 
     # ------------------------------------------------------------------
+    # Load from DMP backup
+    # ------------------------------------------------------------------
+
+    def load_rules_from_backup(self, rules: list) -> None:
+        """Load Rule1-Rule5 strings from a decoded .dmp backup.
+
+        Shows the first non-empty rule in the fetched panel and selects
+        the corresponding slot in the Rule selector.
+        """
+        try:
+            from textual.widgets import TextArea, Static, Select
+            for i, rule_text in enumerate(rules[:5]):
+                if not rule_text:
+                    continue
+                rule_num = i + 1
+                self._fetched_rule_text = rule_text
+                self._fetched_rule_num  = rule_num
+                fetched_area = self.query_one("#rules-fetched-area", TextArea)
+                fetched_area.load_text(rule_text)
+                self.query_one("#rules-fetched-title", Static).update(
+                    f"Backup-ból betöltött Rule{rule_num}"
+                )
+                self.query_one("#rules-fetched-panel").remove_class("hidden")
+                # Select the matching rule slot
+                try:
+                    self.query_one("#rules-rule-select", Select).value = str(rule_num)
+                except Exception:
+                    pass
+                # Only show first non-empty rule by default
+                break
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------------
     # Send to device
     # ------------------------------------------------------------------
 
     async def _send_rules(self) -> None:
-        serial_bridge = self.app.serial_bridge  # type: ignore[attr-defined]
+        app = self.app  # type: ignore[attr-defined]
         status_lbl: Label = self.query_one("#rules-send-status")
-        if not serial_bridge.is_connected:
-            self.notify("Nincs soros port kapcsolat! (Serial tab → Csatlakozás)", severity="warning")
+        if not app.serial_bridge.is_connected and not app.http_bridge.is_connected:
+            self.notify("Nincs kapcsolat! (Serial tab → Csatlakozás / HTTP)", severity="warning")
             return
 
         rule_num = self._get_rule_num()
@@ -913,7 +961,7 @@ class RulesTab(TabPane):
         status_lbl.update("[yellow]Küldés…[/yellow]")
         try:
             for cmd in cmds:
-                serial_bridge.send(cmd)
+                await app.send_cmd_async(cmd)
                 await asyncio.sleep(0.3)
             status_lbl.update(f"[green]● {len(cmds)} parancs elküldve[/green]")
             self.notify(f"Rule{rule_num} elküldve ({len(cmds)} parancs)", severity="information")
@@ -925,19 +973,20 @@ class RulesTab(TabPane):
     # ------------------------------------------------------------------
 
     async def _fetch_rules(self) -> None:
-        serial_bridge = self.app.serial_bridge  # type: ignore[attr-defined]
+        app = self.app  # type: ignore[attr-defined]
+        bridge = app.http_bridge if app.http_bridge.is_connected else app.serial_bridge
         status_lbl: Label = self.query_one("#rules-send-status")
-        if not serial_bridge.is_connected:
-            self.notify("Nincs soros port kapcsolat! (Serial tab → Csatlakozás)", severity="warning")
+        if not bridge.is_connected:
+            self.notify("Nincs kapcsolat! (Serial tab → Csatlakozás / HTTP)", severity="warning")
             return
 
         rule_num = self._get_rule_num()
         status_lbl.update("[yellow]Lekérés…[/yellow]")
         try:
-            serial_bridge.clear_buffer()
-            serial_bridge.send(f"Rule{rule_num}")
+            bridge.clear_buffer()
+            await app.send_cmd_async(f"Rule{rule_num}")
             await asyncio.sleep(1.5)
-            lines = list(serial_bridge.line_buffer)
+            lines = list(bridge.line_buffer)
             raw = _parse_rule_response(lines, rule_num)
             if raw:
                 self._fetched_rule_text = raw

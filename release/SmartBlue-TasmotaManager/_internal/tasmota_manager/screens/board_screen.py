@@ -350,6 +350,30 @@ def _to_type(val: object) -> Optional[str]:
     return None
 
 
+def _parse_mem1(lines: list[str]) -> str:
+    """Parse the Mem1 value from Tasmota response lines.
+
+    Tasmota returns: {"Mem1":"Wemos D1 Mini"} or {"Mem1":""}
+    Returns the value string, or "" if not found / empty.
+    """
+    import json as _json
+    for line in lines:
+        idx = line.find('"Mem1"')
+        if idx < 0:
+            continue
+        brace = line.rfind("{", 0, idx)
+        if brace < 0:
+            continue
+        try:
+            data = _json.loads(line[brace:])
+            val = data.get("Mem1", "")
+            if isinstance(val, str):
+                return val.strip()
+        except Exception:
+            pass
+    return ""
+
+
 def _parse_gpio_from_device(lines: list[str]) -> dict[int, str]:
     """
     Parse GPIO assignments from Tasmota serial responses.
@@ -631,7 +655,7 @@ class BoardTab(TabPane):
                 yield Label("Forrás:", classes="label")
                 with RadioSet(id="board-source-radio"):
                     yield RadioButton("MQTT", id="src-mqtt", value=True)
-                    yield RadioButton("Serial", id="src-serial")
+                    yield RadioButton("Soros/HTTP", id="src-serial")
                 yield Label("", id="board-uptime-label", classes="board-uptime")
                 yield Button("↺ Lekérés", id="board-poll-btn", variant="primary")
                 yield Button("GPIO diagn.", id="board-gpio-diag-btn", variant="default")
@@ -660,6 +684,7 @@ class BoardTab(TabPane):
                         yield Label("–", id="board-dev-firmware")
                         yield Label("–", id="board-dev-hardware")
                         yield Label("", id="board-dev-heap")
+                        yield Label("", id="board-dev-board-type")
 
                     # --- WiFi -------------------------------------------
                     with Vertical(id="board-wifi-panel", classes="board-info-panel"):
@@ -712,6 +737,7 @@ class BoardTab(TabPane):
         self._sensor_data      = {}
         self._energy_data      = {}
         self._uptime              = ""
+        self._dev_board_type      = ""   # value of Mem1 on device
         self._polling             = False
         self._outputs_build_ver   = 0
 
@@ -736,6 +762,7 @@ class BoardTab(TabPane):
         self.run_worker(self._auto_poll_serial(),       exclusive=True,  name="board_serial_poll")
         self.run_worker(self._chip_watcher(),           exclusive=False, name="board_chip_watcher")
         self.run_worker(self._serial_state_monitor(),   exclusive=False, name="board_serial_live")
+        self.set_interval(1.0, self._update_button_states)
 
     # ------------------------------------------------------------------
     # Select / button handlers
@@ -779,7 +806,11 @@ class BoardTab(TabPane):
     # ------------------------------------------------------------------
 
     async def _chip_watcher(self) -> None:
-        """Auto-select board type when chip is detected via serial."""
+        """Auto-select board type when chip is detected via serial.
+
+        Skipped when a Mem1 board type is already set – that has higher priority
+        and we must not oscillate between the chip default and the Mem1 value.
+        """
         from tasmota_manager.board_layouts import CHIP_DEFAULT_BOARD
         serial_bridge = self.app.serial_bridge  # type: ignore[attr-defined]
         last_chip: Optional[str] = None
@@ -787,6 +818,10 @@ class BoardTab(TabPane):
             chip = serial_bridge.detected_chip
             if chip and chip != last_chip:
                 last_chip = chip
+                # Don't override a Mem1-stored board type with the generic chip default.
+                if self.app.device_board_type:  # type: ignore[attr-defined]
+                    await asyncio.sleep(1.0)
+                    continue
                 board_name = CHIP_DEFAULT_BOARD.get(chip)
                 if board_name and board_name in BOARD_BY_NAME:
                     sel: Select = self.query_one("#board-type-select")
@@ -806,8 +841,13 @@ class BoardTab(TabPane):
                 await self._poll_device()
 
     async def _serial_state_monitor(self) -> None:
-        """Real-time serial line monitor: apply POWER/Switch/Sensor state changes."""
-        serial_bridge = self.app.serial_bridge  # type: ignore[attr-defined]
+        """Real-time state-line monitor: apply POWER/Switch/Sensor state changes.
+
+        Works with both serial and HTTP bridges: reads from whichever bridge's
+        state_queue is currently active.  For HTTP the queue is populated each
+        time send_cmd() returns a response (request/response model), so live
+        updates from physical button presses require the auto-poll to be active.
+        """
         _POWER_RE = re.compile(r"POWER(\d*)\s*=\s*(ON|OFF)", re.IGNORECASE)
         _RESULT_POWER_RE = re.compile(r'"POWER(\d*)"\s*:\s*"(ON|OFF)"', re.IGNORECASE)
         _SWITCH_RE = re.compile(r'"Switch(\d+)"\s*:\s*"(ON|OFF)"', re.IGNORECASE)
@@ -820,8 +860,16 @@ class BoardTab(TabPane):
         _last_switch_poll: float = 0.0
 
         while True:
+            app = self.app  # type: ignore[attr-defined]
+            if app.http_bridge.is_connected:
+                active_queue = app.http_bridge.state_queue
+            elif app.serial_bridge.is_connected:
+                active_queue = app.serial_bridge.state_queue
+            else:
+                await asyncio.sleep(0.5)
+                continue
             try:
-                line = await asyncio.wait_for(serial_bridge.state_queue.get(), timeout=1.0)
+                line = await asyncio.wait_for(active_queue.get(), timeout=1.0)
             except asyncio.TimeoutError:
                 continue
             except Exception:
@@ -897,7 +945,7 @@ class BoardTab(TabPane):
                 now = _time_module.monotonic()
                 if now - _last_switch_poll >= 1.0:
                     _last_switch_poll = now
-                    serial_bridge.send("Status 10")
+                    self.app.send_cmd("Status 10")  # type: ignore[attr-defined]
 
     async def _mqtt_state_listener(self) -> None:
         """Consume MQTT tele/STATE and tele/SENSOR messages."""
@@ -927,16 +975,44 @@ class BoardTab(TabPane):
                 self._apply_power(idx, payload_str.strip().upper() == "ON")
 
     # ------------------------------------------------------------------
+    # Button state management
+    # ------------------------------------------------------------------
+
+    def _update_button_states(self) -> None:
+        """Enable/disable buttons based on current connection state."""
+        try:
+            app = self.app  # type: ignore[attr-defined]
+            connected = app.any_device_connected()
+            mqtt_ok   = app.mqtt_manager.connected
+
+            for btn_id in ("#board-poll-btn", "#board-gpio-diag-btn"):
+                try:
+                    self.query_one(btn_id, Button).disabled = not connected
+                except Exception:
+                    pass
+
+            # Output buttons: disabled if both serial/HTTP and MQTT are absent
+            any_ok = connected or mqtt_ok
+            try:
+                for btn in self.query(".board-output-btn").results(Button):
+                    btn.disabled = not any_ok
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------------
     # Serial polling
     # ------------------------------------------------------------------
 
     async def _poll_device(self) -> None:
         """Send Status queries + individual GPIOx commands to get full device state."""
-        serial_bridge = self.app.serial_bridge  # type: ignore[attr-defined]
+        app = self.app  # type: ignore[attr-defined]
+        bridge = app.http_bridge if app.http_bridge.is_connected else app.serial_bridge
         if self._polling:
             return
-        if not serial_bridge.is_connected:
-            self.notify("Nincs soros port kapcsolat! (Serial tab → Csatlakozás)",
+        if not bridge.is_connected:
+            self.notify("Nincs kapcsolat! (Serial tab → Csatlakozás / HTTP)",
                         severity="warning", timeout=5)
             return
         self._polling = True
@@ -944,7 +1020,7 @@ class BoardTab(TabPane):
         btn.disabled = True
         btn.label = "Lekérés…"
         try:
-            serial_bridge.clear_buffer()
+            bridge.clear_buffer()
 
             # Phase 1: standard Status queries
             for cmd, delay in [
@@ -956,17 +1032,19 @@ class BoardTab(TabPane):
                 ("Status 10", 0.6),   # sensors + energy
                 ("Status 11", 0.6),   # GPIO states, uptime
             ]:
-                serial_bridge.send(cmd)
+                await app.send_cmd_async(cmd)
                 await asyncio.sleep(delay)
 
             # Phase 2: bulk GPIO assignment query
             # "GPIO" (no argument) returns all current GPIO assignments at once.
             # Falls back to individual GPIOx queries if bulk returns nothing.
             btn.label = "GPIO…"
-            serial_bridge.send("GPIO")
-            await asyncio.sleep(0.8)   # wait for bulk response
+            await app.send_cmd_async("GPIO")
+            await asyncio.sleep(0.5)
+            await app.send_cmd_async("Mem1")   # board type stored by SmartBlue
+            await asyncio.sleep(0.8)   # wait for all responses
 
-            lines = list(serial_bridge.line_buffer)
+            lines = list(bridge.line_buffer)
             self._apply_status1(_parse_status1(lines))
             self._apply_status2(_parse_status2(lines))
             self._apply_status4(_parse_status4(lines))
@@ -974,6 +1052,12 @@ class BoardTab(TabPane):
             self._apply_status6(_parse_status6(lines))
             self._apply_status10(_parse_status10(lines))
             self._apply_status11(_parse_status11(lines))
+
+            # Board type from Mem1
+            mem1_board = _parse_mem1(lines)
+            if mem1_board:
+                app.device_board_type = mem1_board
+                self._apply_board_type_from_mem1(mem1_board)
 
             # GPIO assignments from individual GPIOx responses
             gpio_from_device = _parse_gpio_from_device(lines)
@@ -993,12 +1077,12 @@ class BoardTab(TabPane):
                     pin.gpio for pin in self._current_board.pins
                     if pin.gpio is not None and not pin.is_power and not pin.is_uart
                 ]
-                serial_bridge.clear_buffer()
+                bridge.clear_buffer()
                 for gpio_num in board_gpio_nums:
-                    serial_bridge.send(f"GPIO{gpio_num}")
+                    await app.send_cmd_async(f"GPIO{gpio_num}")
                     await asyncio.sleep(0.1)
                 await asyncio.sleep(0.5)
-                lines2 = list(serial_bridge.line_buffer)
+                lines2 = list(bridge.line_buffer)
                 gpio_from_device2 = _parse_gpio_from_device(lines2)
                 if gpio_from_device2:
                     self.update_gpio_assignments(gpio_from_device2, from_device=True)
@@ -1025,6 +1109,42 @@ class BoardTab(TabPane):
     # ------------------------------------------------------------------
     # Apply parsed data → update state + UI
     # ------------------------------------------------------------------
+
+    def _apply_board_type_from_mem1(self, board_name: str) -> None:
+        """Auto-select board layout and rebuild diagram based on Mem1 value."""
+        self._dev_board_type = board_name
+        self._update_device_panel()
+        matched = BOARD_BY_NAME.get(board_name)
+        if matched is None:
+            # Case-insensitive fallback
+            lower = board_name.lower()
+            for name, layout in BOARD_BY_NAME.items():
+                if name.lower() == lower:
+                    matched = layout
+                    break
+        if matched is None:
+            self.notify(
+                f"Mem1 board típus '{board_name}' nem ismert – diagram nem frissítve.",
+                severity="warning", timeout=5,
+            )
+            return
+        self._current_board = matched
+        try:
+            sel: Select = self.query_one("#board-type-select", Select)
+            sel.value = matched.name
+        except Exception:
+            pass
+        try:
+            diag: BoardDiagram = self.query_one("#board-diagram", BoardDiagram)
+            diag.set_layout(matched)
+            diag.set_gpio_functions(self._gpio_assignments)
+        except Exception:
+            pass
+        self._rebuild_pin_table()
+        self.notify(
+            f"Board auto-kiválasztva Mem1 alapján: {matched.name}",
+            severity="information", timeout=4,
+        )
 
     def _apply_status1(self, data: dict) -> None:
         if data.get("hostname"):
@@ -1339,6 +1459,12 @@ class BoardTab(TabPane):
         self._sensor_data      = {}
         self._energy_data      = {}
         self._uptime           = ""
+        self._dev_board_type   = ""
+        # Clear uptime label directly (only updated on new data, not in panel methods)
+        try:
+            self.query_one("#board-uptime-label").update("")
+        except Exception:
+            pass
         # Clear diagram
         try:
             diag: BoardDiagram = self.query_one("#board-diagram", BoardDiagram)
@@ -1646,14 +1772,15 @@ class BoardTab(TabPane):
                 sent = True
 
         if not sent:
-            serial_bridge = self.app.serial_bridge  # type: ignore[attr-defined]
-            if serial_bridge.is_connected:
-                serial_bridge.send(f"{cmd} {value}")
-                self.notify(f"Serial → {cmd} {value}", severity="information")
+            app = self.app  # type: ignore[attr-defined]
+            if app.serial_bridge.is_connected or app.http_bridge.is_connected:
+                app.send_cmd(f"{cmd} {value}")
+                conn_type = "HTTP" if app.http_bridge.is_connected else "Serial"
+                self.notify(f"{conn_type} → {cmd} {value}", severity="information")
                 sent = True
             else:
                 self.notify(
-                    "Nincs soros port kapcsolat! (Serial tab → Csatlakozás)",
+                    "Nincs kapcsolat! (Serial tab → Csatlakozás / HTTP)",
                     severity="error", timeout=5,
                 )
                 return
@@ -1668,19 +1795,20 @@ class BoardTab(TabPane):
 
     async def _gpio_diagnostics(self) -> None:
         """Send GPIO command and show raw response lines in a notification."""
-        serial_bridge = self.app.serial_bridge  # type: ignore[attr-defined]
-        if not serial_bridge.is_connected:
-            self.notify("Nincs soros port kapcsolat!", severity="warning")
+        app = self.app  # type: ignore[attr-defined]
+        bridge = app.http_bridge if app.http_bridge.is_connected else app.serial_bridge
+        if not bridge.is_connected:
+            self.notify("Nincs kapcsolat!", severity="warning")
             return
 
-        serial_bridge.clear_buffer()
+        bridge.clear_buffer()
         # Try both the bulk GPIO command and GPIO32 individually
-        serial_bridge.send("GPIO")
+        await app.send_cmd_async("GPIO")
         await asyncio.sleep(1.0)
-        serial_bridge.send("GPIO32")
+        await app.send_cmd_async("GPIO32")
         await asyncio.sleep(0.5)
 
-        lines = list(serial_bridge.line_buffer)
+        lines = list(bridge.line_buffer)
 
         # Collect lines that seem related to GPIO response
         relevant = [l for l in lines if "GPIO" in l and l.startswith(">") is False]
@@ -1697,14 +1825,15 @@ class BoardTab(TabPane):
     async def _verify_relay_state(self) -> None:
         """Wait briefly then query Status 11 to confirm relay state changed."""
         await asyncio.sleep(0.6)
-        serial_bridge = self.app.serial_bridge  # type: ignore[attr-defined]
-        if not serial_bridge.is_connected:
+        app = self.app  # type: ignore[attr-defined]
+        bridge = app.http_bridge if app.http_bridge.is_connected else app.serial_bridge
+        if not bridge.is_connected:
             return
         try:
-            serial_bridge.clear_buffer()
-            serial_bridge.send("Status 11")
+            bridge.clear_buffer()
+            await app.send_cmd_async("Status 11")
             await asyncio.sleep(0.5)
-            lines = list(serial_bridge.line_buffer)
+            lines = list(bridge.line_buffer)
             self._apply_status11(_parse_status11(lines))
         except Exception:
             pass
@@ -1736,6 +1865,12 @@ class BoardTab(TabPane):
                 self.query_one("#board-dev-heap").update(
                     f"[dim]Szabad RAM:[/dim] [{color}]{self._dev_heap} kB[/{color}]"
                 )
+            else:
+                self.query_one("#board-dev-heap").update("[dim]Szabad RAM: –[/dim]")
+            bt = self._dev_board_type or ""
+            self.query_one("#board-dev-board-type").update(
+                f"[dim]Board:[/dim]     [bold magenta]{bt}[/bold magenta]" if bt else ""
+            )
         except Exception:
             pass
 
@@ -1752,10 +1887,14 @@ class BoardTab(TabPane):
                 self.query_one("#board-mqtt-client").update(
                     f"[dim]Kliens:[/dim]  {self._mqtt_client}"
                 )
+            else:
+                self.query_one("#board-mqtt-client").update("[dim]Kliens: –[/dim]")
             if self._mqtt_count is not None and self._mqtt_count > 0:
                 self.query_one("#board-mqtt-count").update(
                     f"[dim]Kapcsolódások:[/dim] {self._mqtt_count}"
                 )
+            else:
+                self.query_one("#board-mqtt-count").update("[dim]Kapcsolódások: –[/dim]")
         except Exception:
             pass
 

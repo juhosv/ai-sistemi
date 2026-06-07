@@ -78,9 +78,9 @@ class SerialTab(TabPane):
 
     def compose(self) -> ComposeResult:
         with Vertical(id="serial-tab"):
-            # --- Connection controls ------------------------------------
+            # --- Serial connection controls ------------------------------
             with Horizontal(id="serial-controls"):
-                yield Label("Port:", classes="label")
+                yield Label("Soros:", classes="label")
                 yield Select(
                     options=[("– Keresés… –", "__none")],
                     id="serial-port-select",
@@ -108,6 +108,27 @@ class SerialTab(TabPane):
             with Horizontal(id="serial-wifi-bar"):
                 yield Static("WiFi:", classes="label")
                 yield Label("–", id="serial-wifi-status")
+
+            # --- HTTP API connection panel --------------------------------
+            with Horizontal(id="http-connect-panel"):
+                yield Static("HTTP:", classes="label")
+                yield Input(
+                    placeholder="192.168.1.100",
+                    id="http-ip-input",
+                )
+                yield Input(
+                    placeholder="Jelszó (opcionális)",
+                    id="http-pw-input",
+                    password=True,
+                )
+                yield Button("Csatlakozás", id="http-connect-btn", variant="success")
+                yield Label("● Nincs HTTP kapcsolat", id="http-status-lbl")
+
+            # --- MQTT status bar (link to MQTT tab) ----------------------
+            with Horizontal(id="mqtt-status-bar"):
+                yield Static("MQTT:", classes="label")
+                yield Label("● Nincs MQTT kapcsolat", id="mqtt-status-lbl")
+                yield Button("→ MQTT tab", id="mqtt-goto-btn", variant="default")
 
             # --- Quick commands -----------------------------------------
             with Horizontal(id="serial-quick-cmds"):
@@ -138,7 +159,10 @@ class SerialTab(TabPane):
 
     def on_mount(self) -> None:
         self._refresh_ports()
-        self.run_worker(self._serial_reader(), exclusive=True, name="serial_reader")
+        self.run_worker(self._serial_reader(), exclusive=True,  name="serial_reader")
+        self.run_worker(self._http_reader(),   exclusive=False, name="http_reader")
+        self.set_interval(1.0, self._update_mqtt_status)
+        self.set_interval(1.0, self._update_button_states)
 
     # ------------------------------------------------------------------
     # Event handlers
@@ -157,8 +181,14 @@ class SerialTab(TabPane):
             log.clear()
         elif btn_id == "serial-open-log-dir":
             self._open_log_directory()
+        elif btn_id == "http-connect-btn":
+            self._toggle_http_connection()
+        elif btn_id == "mqtt-goto-btn":
+            try:
+                self.app.action_switch_tab("mqtt")  # type: ignore[attr-defined]
+            except Exception:
+                pass
         elif btn_id.startswith("qcmd_"):
-            # Find matching quick command
             cmd_key = btn_id[5:].replace("_", " ")
             for _, cmd, _ in QUICK_COMMANDS:
                 if cmd == cmd_key:
@@ -187,6 +217,7 @@ class SerialTab(TabPane):
             self._log_line("[dim]── Kapcsolat bontva ──[/dim]")
             self._set_wifi_status(None, None, None, None)
             self._update_log_bar(None)
+            self.app.reset_device_data()  # type: ignore[attr-defined]
         else:
             port = self._selected_port()
             baud = self._selected_baud()
@@ -206,6 +237,43 @@ class SerialTab(TabPane):
             except Exception as exc:
                 lbl.update(f"[red]Hiba: {exc}[/red]")
 
+    def _toggle_http_connection(self) -> None:
+        http_bridge = self.app.http_bridge  # type: ignore[attr-defined]
+        btn: Button = self.query_one("#http-connect-btn")
+        lbl: Label = self.query_one("#http-status-lbl")
+
+        if http_bridge.is_connected:
+            http_bridge.disconnect()
+            btn.label = "Csatlakozás"
+            btn.variant = "success"
+            lbl.update("● Nincs HTTP kapcsolat")
+            self._log_line("[dim]── HTTP kapcsolat bontva ──[/dim]")
+            self.app.reset_device_data()  # type: ignore[attr-defined]
+        else:
+            ip_input: Input = self.query_one("#http-ip-input")
+            pw_input: Input = self.query_one("#http-pw-input")
+            ip = ip_input.value.strip()
+            pw = pw_input.value.strip()
+            if not ip:
+                lbl.update("[red]Add meg az IP-t![/red]")
+                return
+            lbl.update("[yellow]Kapcsolódás…[/yellow]")
+            try:
+                ok = http_bridge.connect(ip, pw)
+            except Exception as exc:
+                ok = False
+                lbl.update(f"[red]Hiba: {exc}[/red]")
+                return
+            if ok:
+                btn.label = "Lecsatlakozás"
+                btn.variant = "error"
+                lbl.update(f"[green]● {http_bridge.ip}[/green]")
+                self._log_line(f"[green]── HTTP kapcsolódva: {http_bridge.ip} ──[/green]")
+                # Clear stale data from any previously connected device
+                self.app.reset_device_data()  # type: ignore[attr-defined]
+            else:
+                lbl.update(f"[red]Nem elérhető: {ip}[/red]")
+
     def _send_command(self) -> None:
         inp: Input = self.query_one("#serial-cmd-input")
         cmd = inp.value.strip()
@@ -215,19 +283,28 @@ class SerialTab(TabPane):
         inp.value = ""
 
     def _send_direct(self, cmd: str) -> None:
-        serial_bridge = self.app.serial_bridge  # type: ignore[attr-defined]
-        if not serial_bridge.is_connected:
-            self._log_line("[red]Nincs soros port kapcsolat![/red]")
+        """Send cmd via whichever bridge is connected (HTTP preferred, serial fallback).
+
+        HTTP responses appear in the log via _http_reader; serial echoes via _serial_reader.
+        The outgoing command is always logged immediately since HTTP has no TX-echo.
+        """
+        app = self.app  # type: ignore[attr-defined]
+        if not app.any_device_connected():
+            self._log_line("[red]Nincs kapcsolat (soros port vagy HTTP)![/red]")
             return
-        try:
-            serial_bridge.send(cmd)
-            ts = datetime.now().strftime("%H:%M:%S.%f")[:12]
-            self._log_line(f"[dim]{ts}[/dim]  [yellow]> {cmd}[/yellow]")
-        except Exception as exc:
-            self._log_line(f"[red]Küldési hiba: {exc}[/red]")
+        ts = datetime.now().strftime("%H:%M:%S.%f")[:12]
+        self._log_line(f"[dim]{ts}[/dim]  [yellow]> {cmd}[/yellow]")
+        self.run_worker(self._send_async(cmd), name="serial_tab_send")
+
+    async def _send_async(self, cmd: str) -> None:
+        """Worker: await the non-blocking send, show error on failure."""
+        import asyncio as _asyncio
+        ok = await self.app.send_cmd_async(cmd)  # type: ignore[attr-defined]
+        if not ok:
+            self._log_line("[red]Parancs sikertelen (eszköz nem elérhető?)[/red]")
 
     # ------------------------------------------------------------------
-    # Background serial reader
+    # Background readers
     # ------------------------------------------------------------------
 
     async def _serial_reader(self) -> None:
@@ -252,6 +329,23 @@ class SerialTab(TabPane):
             self._parse_wifi_from_line(line)
             # Detect chip from boot log or Status 2 response
             self._detect_chip_from_line(line)
+
+    async def _http_reader(self) -> None:
+        """Read HTTP bridge responses and display them in the log (cyan prefix)."""
+        import asyncio
+        http_bridge = self.app.http_bridge  # type: ignore[attr-defined]
+        while True:
+            try:
+                line = await asyncio.wait_for(http_bridge.queue.get(), timeout=1.0)
+            except asyncio.TimeoutError:
+                continue
+            except Exception:
+                await asyncio.sleep(0.1)
+                continue
+
+            ts = datetime.now().strftime("%H:%M:%S.%f")[:12]
+            colored = _colorize_line(line)
+            self._log_line(f"[dim]{ts}[/dim]  [dim cyan]HTTP »[/dim cyan] {colored}")
 
     # ------------------------------------------------------------------
     # WiFi status parsing
@@ -465,6 +559,41 @@ class SerialTab(TabPane):
             self._log_line(
                 f"[dim]── Chip azonosítva: [bold cyan]{chip}[/bold cyan] ──[/dim]"
             )
+
+    # ------------------------------------------------------------------
+    # Periodic status updates
+    # ------------------------------------------------------------------
+
+    def _update_mqtt_status(self) -> None:
+        """Refresh the MQTT status row every second."""
+        try:
+            mqtt_mgr = self.app.mqtt_manager  # type: ignore[attr-defined]
+            lbl: Label = self.query_one("#mqtt-status-lbl")
+            if mqtt_mgr.connected:
+                host = getattr(mqtt_mgr, "host", "") or getattr(mqtt_mgr, "_host", "")
+                port = getattr(mqtt_mgr, "port", "") or getattr(mqtt_mgr, "_port", "")
+                addr = f"{host}:{port}" if host else "broker"
+                lbl.update(f"[green]● Kapcsolódva: {addr}[/green]")
+            else:
+                lbl.update("● Nincs MQTT kapcsolat")
+        except Exception:
+            pass
+
+    def _update_button_states(self) -> None:
+        """Enable/disable send buttons based on current connection state."""
+        try:
+            app = self.app  # type: ignore[attr-defined]
+            connected = app.any_device_connected()
+            send_btn: Button = self.query_one("#serial-send-btn")
+            send_btn.disabled = not connected
+            for _, cmd, _ in QUICK_COMMANDS:
+                try:
+                    btn: Button = self.query_one(f"#qcmd_{cmd.replace(' ', '_')}")
+                    btn.disabled = not connected
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     # Helpers

@@ -4,11 +4,13 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import subprocess
+import sys
 from pathlib import Path
 from typing import Optional
 
-# GPIO parser shared with the Board tab
-from tasmota_manager.screens.board_screen import _parse_gpio_from_device
+# GPIO parser and type resolver shared with the Board tab
+from tasmota_manager.screens.board_screen import _parse_gpio_from_device, _parse_mem1, _to_type
 
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical, ScrollableContainer
@@ -73,9 +75,9 @@ def parse_fulltopic_from_mqt_lines(lines: list[str], device_topic: str) -> Optio
 
     Tasmota 15 does not include FullTopic in StatusPRM, but the device logs
     every MQTT publish like:
-        MQT: demo_region/demo_user/proba_123/stat/STATUS = {...}
+        MQT: demo_user/demo_region/proba_123/stat/STATUS = {...}
 
-    From this we reconstruct: demo_region/demo_user/%topic%/%prefix%/
+    From this we reconstruct: demo_user/demo_region/%topic%/%prefix%/
     """
     if not device_topic:
         return None
@@ -96,12 +98,12 @@ def parse_fulltopic_from_mqt_lines(lines: list[str], device_topic: str) -> Optio
             pos = mqtt_topic.find(marker)
             if pos < 0:
                 continue
-            path_before_prefix = mqtt_topic[:pos]  # e.g. demo_region/demo_user/proba_123
+            path_before_prefix = mqtt_topic[:pos]  # e.g. demo_user/demo_region/proba_123
             # Remove device_topic suffix
             suffix = f"/{device_topic}"
             if path_before_prefix.endswith(suffix):
                 group_path = path_before_prefix[: -len(suffix)]
-                # group_path = "demo_region/demo_user"
+                # group_path = "demo_user/demo_region"
                 return f"{group_path}/%topic%/%prefix%/"
             # Maybe no group prefix (default format): device_topic/prefix/...
             if path_before_prefix == device_topic:
@@ -288,6 +290,7 @@ from tasmota_manager.board_layouts import (
     BOARD_BY_NAME,
     BoardLayout,
     D1_MINI,
+    DEFAULT_GPIO_ASSIGNMENTS,
     MODULE_SELECT_OPTIONS,
     PinDef,
 )
@@ -315,6 +318,7 @@ from tasmota_manager.groups_manager import (
     get_user_name,
     list_regions,
     list_users,
+    sanitize_id,
     update_region,
     update_user,
 )
@@ -346,6 +350,7 @@ class InteractiveBoardDiagram(Widget):
         super().__init__(**kwargs)
         self._layout = layout
         self._assignments = dict(assignments)
+        self._instance_labels: dict[int, str] = compute_gpio_instances(self._assignments)
 
     def compose(self) -> ComposeResult:
         left_pins = sorted(
@@ -380,7 +385,8 @@ class InteractiveBoardDiagram(Widget):
             has_assign = bool(assigned and assigned != "none")
             boot = "⚠" if pin.boot_sensitive else ""
             if has_assign:
-                label = f"{boot}{pin.label} ✓"
+                inst = self._instance_labels.get(gpio, "")
+                label = f"{boot}{pin.label} {inst}" if inst else f"{boot}{pin.label} ✓"
                 variant = "success"
             else:
                 label = f"{boot}{pin.label}"
@@ -401,21 +407,31 @@ class InteractiveBoardDiagram(Widget):
             return Static(f" {pin.label} ", classes=classes)
 
     def update_pin(self, gpio_num: int, type_id: str) -> None:
-        """Refresh a single pin button after an assignment change."""
-        try:
-            btn: Button = self.query_one(f"#cfgpin_{gpio_num}")
-            pin = self._layout.pin_by_gpio(gpio_num)
-            pin_label = pin.label if pin else f"G{gpio_num}"
-            boot = "⚠" if (pin and pin.boot_sensitive) else ""
-            if type_id and type_id != "none":
-                btn.label = f"{boot}{pin_label} ✓"
+        """Refresh a single pin button after an assignment change.
+
+        After updating the assignment, all instance labels are recomputed so
+        that e.g. deleting Relay1 correctly promotes Relay2 → Relay1 on other
+        pins, and every visible pin button gets an up-to-date label.
+        """
+        self._assignments[gpio_num] = type_id
+        self._instance_labels = compute_gpio_instances(self._assignments)
+        # Refresh every visible pin so instance numbers stay consistent.
+        for pin in self._layout.pins:
+            if pin.gpio is None or pin.is_power or pin.is_uart or pin.adc_only:
+                continue
+            try:
+                btn: Button = self.query_one(f"#cfgpin_{pin.gpio}")
+            except Exception:
+                continue
+            t = self._assignments.get(pin.gpio, "none") or "none"
+            boot = "⚠" if pin.boot_sensitive else ""
+            if t and t != "none":
+                inst = self._instance_labels.get(pin.gpio, "")
+                btn.label = f"{boot}{pin.label} {inst}" if inst else f"{boot}{pin.label} ✓"
                 btn.variant = "success"
             else:
-                btn.label = f"{boot}{pin_label}"
+                btn.label = f"{boot}{pin.label}"
                 btn.variant = "default"
-            self._assignments[gpio_num] = type_id
-        except Exception:
-            pass
 
 
 class ConfigTab(TabPane):
@@ -442,21 +458,21 @@ class ConfigTab(TabPane):
                 yield Input(placeholder="Profil neve", id="cfg-profile-name-input", value="uj_profil")
                 yield Button("↺ Reset", id="cfg-reset-btn", variant="error")
 
-            # --- Group row (Régió / User) --------------------------------
+            # --- Group row (User / Régió) --------------------------------
             with Horizontal(id="config-group-row"):
-                yield Label("Régió:", classes="cfg-row-label")
-                yield Select(
-                    options=self._region_options(),
-                    id="cfg-region-select",
-                    allow_blank=True,
-                    prompt="– válassz régiót –",
-                )
                 yield Label("User:", classes="cfg-row-label")
                 yield Select(
-                    options=[],
+                    options=self._user_options_top(),
                     id="cfg-user-select",
                     allow_blank=True,
                     prompt="– válassz usert –",
+                )
+                yield Label("Régió:", classes="cfg-row-label")
+                yield Select(
+                    options=[],
+                    id="cfg-region-select",
+                    allow_blank=True,
+                    prompt="– válassz régiót –",
                 )
                 yield Button("⚙ Szerkesztés", id="cfg-groups-edit-btn", variant="default")
 
@@ -464,38 +480,44 @@ class ConfigTab(TabPane):
             with Vertical(id="cfg-groups-editor", classes="hidden"):
                 yield Static("Csoportok kezelése", classes="section-title")
                 with Horizontal(id="cfg-groups-editor-inner"):
-                    # Left: region management
-                    with Vertical(id="cfg-groups-region-col"):
-                        yield Static("Régiók", classes="subsection-title")
-                        yield Select(
-                            options=self._region_options(),
-                            id="cfg-edit-region-select",
-                            allow_blank=True,
-                            prompt="– válassz régiót –",
-                        )
-                        with Horizontal(classes="row"):
-                            yield Input(placeholder="Régió azonosító (pl. hu_eszak)", id="cfg-new-region-id")
-                            yield Input(placeholder="Megjelenítendő név", id="cfg-new-region-name")
-                            yield Button("+ Hozzáad", id="cfg-add-region-btn", variant="success")
-                        with Horizontal(classes="row"):
-                            yield Button("🗑 Régió törlése", id="cfg-del-region-btn", variant="error")
-                            yield Button("✦ Új régió", id="cfg-new-region-btn", variant="default")
-                    # Right: user management
+                    # Left: user management (primary / top-level)
                     with Vertical(id="cfg-groups-user-col"):
-                        yield Static("Userek (kiválasztott régióban)", classes="subsection-title")
+                        yield Static("Userek", classes="subsection-title")
                         yield Select(
-                            options=[],
+                            options=self._user_options_top(),
                             id="cfg-edit-user-select",
                             allow_blank=True,
                             prompt="– válassz usert –",
                         )
                         with Horizontal(classes="row"):
-                            yield Input(placeholder="User azonosító (pl. juhosv)", id="cfg-new-user-id")
-                            yield Input(placeholder="Megjelenítendő név", id="cfg-new-user-name")
-                            yield Button("+ Hozzáad", id="cfg-add-user-btn", variant="success")
+                            yield Label("Azonosító:", classes="label")
+                            yield Input(placeholder="pl. juhosv", id="cfg-new-user-id")
                         with Horizontal(classes="row"):
-                            yield Button("🗑 User törlése", id="cfg-del-user-btn", variant="error")
-                            yield Button("✦ Új user", id="cfg-new-user-btn", variant="default")
+                            yield Label("Név:", classes="label")
+                            yield Input(placeholder="Megjelenítendő név", id="cfg-new-user-name")
+                        with Horizontal(classes="row"):
+                            yield Button("+ Új", id="cfg-new-user-btn", variant="default")
+                            yield Button("💾 Mentés", id="cfg-add-user-btn", variant="success")
+                            yield Button("🗑 Törlés", id="cfg-del-user-btn", variant="error")
+                    # Right: region management (secondary / per-user)
+                    with Vertical(id="cfg-groups-region-col"):
+                        yield Static("Régiók (kiválasztott userhez)", classes="subsection-title")
+                        yield Select(
+                            options=[],
+                            id="cfg-edit-region-select",
+                            allow_blank=True,
+                            prompt="– válassz régiót –",
+                        )
+                        with Horizontal(classes="row"):
+                            yield Label("Azonosító:", classes="label")
+                            yield Input(placeholder="pl. hu_eszak", id="cfg-new-region-id")
+                        with Horizontal(classes="row"):
+                            yield Label("Név:", classes="label")
+                            yield Input(placeholder="Megjelenítendő név", id="cfg-new-region-name")
+                        with Horizontal(classes="row"):
+                            yield Button("+ Új", id="cfg-new-region-btn", variant="default")
+                            yield Button("💾 Mentés", id="cfg-add-region-btn", variant="success")
+                            yield Button("🗑 Törlés", id="cfg-del-region-btn", variant="error")
 
             # --- Device fetch row ---------------------------------------
             with Horizontal(id="config-fetch-row"):
@@ -570,9 +592,6 @@ class ConfigTab(TabPane):
                 with Vertical(id="general-left"):
                     yield Static("Általános", classes="section-title")
                     with Horizontal(classes="row"):
-                        yield Label("TelePeriod:", classes="label")
-                        yield Input(value="300", id="cfg-teleperiod")
-                    with Horizontal(classes="row"):
                         yield Label("Modul / Board:", classes="label")
                         yield Select(
                             options=MODULE_SELECT_OPTIONS,
@@ -622,8 +641,20 @@ class ConfigTab(TabPane):
 
             # --- Send buttons -------------------------------------------
             with Horizontal(id="config-send-row"):
-                yield Button("📡 Küldés soros porton", id="cfg-send-serial-btn", variant="primary")
+                yield Button("📡 Küldés eszközre", id="cfg-send-serial-btn", variant="primary")
                 yield Button("📡 Küldés MQTT-n", id="cfg-send-mqtt-btn", variant="success")
+
+            # --- HTTP backup / restore ----------------------------------
+            with Horizontal(id="config-backup-row"):
+                yield Button("💾 Konfig backup", id="cfg-backup-btn", variant="default")
+                yield Select(
+                    options=[("– nincs backup fájl –", "__none")],
+                    id="cfg-restore-select",
+                    allow_blank=False,
+                )
+                yield Button("📤 Visszatöltés", id="cfg-restore-btn", variant="warning")
+                yield Button("📋 Betöltés backup-ból", id="cfg-load-from-dmp-btn", variant="default")
+                yield Label("", id="cfg-backup-status")
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -633,23 +664,56 @@ class ConfigTab(TabPane):
         self._gpio_assignments = {}
         self._selected_gpio = None
         self._diagram_build_version = 0
+        # When True, cfg-module changes are programmatic (fetch/sync) and must
+        # NOT trigger _apply_module_defaults (which would wipe device GPIO data).
+        self._suppress_module_defaults: bool = False
         table: DataTable = self.query_one("#config-preview-table")
         table.add_columns("Parancs", "Érték")
         self._refresh_profiles()
+        self._refresh_backup_list()
         self._rebuild_board_diagram()
-        # Update serial hint every second
         self.set_interval(1.0, self._update_fetch_hint)
+        self.set_interval(1.0, self._update_button_states)
         self._update_fetch_hint()
+        self._update_button_states()
 
     def _update_fetch_hint(self) -> None:
-        """Show/hide serial connection hint based on current connection state."""
+        """Show/hide connection hint based on current connection state."""
         try:
-            serial_bridge = self.app.serial_bridge  # type: ignore[attr-defined]
+            app = self.app  # type: ignore[attr-defined]
             lbl: Label = self.query_one("#cfg-fetch-hint")
-            if serial_bridge.is_connected:
+            if app.http_bridge.is_connected:
+                lbl.update("[dim]  HTTP kapcsolat aktív[/dim]")
+            elif app.serial_bridge.is_connected:
                 lbl.update("")
             else:
-                lbl.update("[dim]  Soros portkapcsolat szükséges (Serial tab → Csatlakozás)[/dim]")
+                lbl.update("[dim]  Kapcsolat szükséges (Serial tab → Csatlakozás / HTTP)[/dim]")
+        except Exception:
+            pass
+
+    def _update_button_states(self) -> None:
+        """Enable/disable buttons based on active connection type."""
+        try:
+            app = self.app  # type: ignore[attr-defined]
+            connected    = app.any_device_connected()
+            http_ok      = app.http_bridge.is_connected
+            mqtt_ok      = app.mqtt_manager.connected
+
+            _set = {
+                "#cfg-fetch-btn":       connected,
+                "#wifi-scan-btn":       connected,
+                "#wifi-pick-ssid1":     connected,
+                "#wifi-pick-ssid2":     connected,
+                "#cfg-send-serial-btn": connected,
+                "#cfg-send-mqtt-btn":   mqtt_ok,
+                "#cfg-backup-btn":      http_ok,
+                "#cfg-restore-btn":     http_ok,
+            }
+            for sel, enabled in _set.items():
+                try:
+                    self.query_one(sel, Button).disabled = not enabled
+                except Exception:
+                    pass
         except Exception:
             pass
 
@@ -682,79 +746,114 @@ class ConfigTab(TabPane):
             self._send_via_serial()
         elif bid == "cfg-send-mqtt-btn":
             self._send_via_mqtt()
+        elif bid == "cfg-backup-btn":
+            self.run_worker(self._do_backup(), name="cfg_backup")
+        elif bid == "cfg-restore-btn":
+            self.run_worker(self._do_restore(), name="cfg_restore")
+        elif bid == "cfg-load-from-dmp-btn":
+            self.run_worker(self._do_load_from_dmp(), name="cfg_load_dmp")
         # --- Group editor buttons ---
         elif bid == "cfg-groups-edit-btn":
             self._toggle_groups_editor()
-        elif bid == "cfg-add-region-btn":
-            self._add_region()
-        elif bid == "cfg-del-region-btn":
-            self._delete_region()
         elif bid == "cfg-add-user-btn":
-            self._add_user()
+            self._save_user()
         elif bid == "cfg-del-user-btn":
             self._delete_user()
-        elif bid == "cfg-new-region-btn":
-            self._clear_region_fields()
-            try:
-                self.query_one("#cfg-edit-region-select", Select).value = Select.BLANK
-            except Exception:
-                pass
         elif bid == "cfg-new-user-btn":
-            self._clear_user_fields()
+            # Clear selection + fields → next "Mentés" will add a new user
             try:
-                self.query_one("#cfg-edit-user-select", Select).value = Select.BLANK
+                self.query_one("#cfg-edit-user-select", Select).clear()
             except Exception:
                 pass
+            self.query_one("#cfg-new-user-id", Input).value = ""
+            self.query_one("#cfg-new-user-name", Input).value = ""
+            self.query_one("#cfg-edit-region-select", Select).set_options([])
+            self.query_one("#cfg-new-region-id", Input).value = ""
+            self.query_one("#cfg-new-region-name", Input).value = ""
+        elif bid == "cfg-add-region-btn":
+            self._save_region()
+        elif bid == "cfg-del-region-btn":
+            self._delete_region()
+        elif bid == "cfg-new-region-btn":
+            # Clear region selection + fields → next "Mentés" will add a new region
+            try:
+                self.query_one("#cfg-edit-region-select", Select).clear()
+            except Exception:
+                pass
+            self.query_one("#cfg-new-region-id", Input).value = ""
+            self.query_one("#cfg-new-region-name", Input).value = ""
 
     def on_select_changed(self, event: Select.Changed) -> None:
         sid = event.select.id or ""
         if sid == "cfg-module":
+            if not self._suppress_module_defaults:
+                self._apply_module_defaults(str(event.value))
             self._rebuild_board_diagram()
             self._update_preview()
         elif sid == "gpio-func-select":
             self._update_func_preview()
-        elif sid == "cfg-region-select":
-            self._on_region_changed(event.value)
-            self._update_fulltopic_from_group()
-            try:
-                self.app.sync_mqtt_to_monitor(topic_only=True)  # type: ignore[attr-defined]
-            except Exception:
-                pass
         elif sid == "cfg-user-select":
+            self._on_main_user_changed(event.value)
             self._update_fulltopic_from_group()
             try:
                 self.app.sync_mqtt_to_monitor(topic_only=True)  # type: ignore[attr-defined]
             except Exception:
                 pass
-        elif sid == "cfg-edit-region-select":
-            self._on_edit_region_changed(event.value)
+        elif sid == "cfg-region-select":
+            self._update_fulltopic_from_group()
+            try:
+                self.app.sync_mqtt_to_monitor(topic_only=True)  # type: ignore[attr-defined]
+            except Exception:
+                pass
         elif sid == "cfg-edit-user-select":
-            region_sel: Select = self.query_one("#cfg-edit-region-select")
-            rid = region_sel.value
-            region_id = rid if isinstance(rid, str) else ""
-            self._on_edit_user_changed(event.value, region_id)
+            self._on_edit_user_changed(event.value)
+        elif sid == "cfg-edit-region-select":
+            user_sel: Select = self.query_one("#cfg-edit-user-select")
+            uid = user_sel.value
+            user_id = uid if isinstance(uid, str) else ""
+            self._on_edit_region_changed(event.value, user_id)
+
+    _ID_INPUTS = {"cfg-new-user-id", "cfg-new-region-id", "cfg-mqtt-topic"}
 
     def on_input_changed(self, event: Input.Changed) -> None:
         self._update_preview()
-        if event.input.id == "cfg-mqtt-topic":
+        inp_id = event.input.id or ""
+
+        # Sanitize identifier fields in real-time (spaces → _, strip forbidden chars)
+        if inp_id in ("cfg-new-user-id", "cfg-new-region-id"):
+            raw = event.value
+            clean = sanitize_id(raw)
+            if clean != raw:
+                # Preserve cursor position: sanitize shifts chars, so put cursor at end
+                event.input.value = clean
+            return  # preview not relevant for these fields
+
+        if inp_id == "cfg-mqtt-topic":
+            # Also sanitize the device topic
+            raw = event.value
+            clean = sanitize_id(raw)
+            if clean != raw:
+                event.input.value = clean
             try:
-                region_sel: Select = self.query_one("#cfg-region-select")
                 user_sel: Select = self.query_one("#cfg-user-select")
-                rid = region_sel.value if isinstance(region_sel.value, str) else ""
+                region_sel: Select = self.query_one("#cfg-region-select")
                 uid = user_sel.value if isinstance(user_sel.value, str) else ""
+                rid = region_sel.value if isinstance(region_sel.value, str) else ""
                 self._update_fulltopic_preview(rid, uid)
             except Exception:
                 pass
 
     # ------------------------------------------------------------------
-    # Group (region/user) management helpers
+    # Group (user/region) management helpers
     # ------------------------------------------------------------------
 
-    def _region_options(self) -> list[tuple[str, str]]:
-        return [(name, rid) for rid, name in list_regions()]
+    def _user_options_top(self) -> list[tuple[str, str]]:
+        """Options for the top-level user dropdowns."""
+        return [(name, uid) for uid, name in list_users()]
 
-    def _user_options(self, region_id: str) -> list[tuple[str, str]]:
-        return [(name, uid) for uid, name in list_users(region_id)]
+    def _region_options_for_user(self, user_id: str) -> list[tuple[str, str]]:
+        """Options for the region dropdown of a specific user."""
+        return [(name, rid) for rid, name in list_regions(user_id)]
 
     def _toggle_groups_editor(self) -> None:
         editor = self.query_one("#cfg-groups-editor")
@@ -766,131 +865,109 @@ class ConfigTab(TabPane):
         else:
             btn.label = "✕ Bezárás"
             btn.variant = "warning"
-            self._refresh_editor_region_select()
+            self._refresh_editor_user_select()
 
-    def _on_region_changed(self, region_id) -> None:
-        """Update user dropdown when region selection changes."""
-        if region_id is None or region_id is Select.BLANK or not isinstance(region_id, str):
-            self.query_one("#cfg-user-select", Select).set_options([])
+    def _on_main_user_changed(self, user_id) -> None:
+        """Update region dropdown in the main row when user selection changes."""
+        if user_id is None or user_id is Select.BLANK or not isinstance(user_id, str):
+            self.query_one("#cfg-region-select", Select).set_options([])
             return
-        self.query_one("#cfg-user-select", Select).set_options(self._user_options(region_id))
+        self.query_one("#cfg-region-select", Select).set_options(
+            self._region_options_for_user(user_id)
+        )
 
-    def _on_edit_region_changed(self, region_id) -> None:
-        """Update user dropdown in the editor panel and fill edit fields."""
-        if region_id is None or region_id is Select.BLANK or not isinstance(region_id, str):
-            self.query_one("#cfg-edit-user-select", Select).set_options([])
-            self.query_one("#cfg-new-region-id", Input).value = ""
-            self.query_one("#cfg-new-region-name", Input).value = ""
-            self._set_region_btn_mode("add")
-            return
-        # Fill inputs with selected region's data
-        self.query_one("#cfg-new-region-id", Input).value = region_id
-        self.query_one("#cfg-new-region-name", Input).value = get_region_name(region_id)
-        self._set_region_btn_mode("edit")
-        self.query_one("#cfg-edit-user-select", Select).set_options(self._user_options(region_id))
-        # Reset user fields when region changes
-        self.query_one("#cfg-new-user-id", Input).value = ""
-        self.query_one("#cfg-new-user-name", Input).value = ""
-        self._set_user_btn_mode("add")
-
-    def _on_edit_user_changed(self, user_id, region_id: str) -> None:
-        """Fill user edit fields when a user is selected."""
+    def _on_edit_user_changed(self, user_id) -> None:
+        """Fill user edit fields and refresh region list when a user is selected in the editor."""
         if user_id is None or user_id is Select.BLANK or not isinstance(user_id, str):
             self.query_one("#cfg-new-user-id", Input).value = ""
             self.query_one("#cfg-new-user-name", Input).value = ""
-            self._set_user_btn_mode("add")
+            # Disable region column
+            self.query_one("#cfg-edit-region-select", Select).set_options([])
+            self.query_one("#cfg-new-region-id", Input).value = ""
+            self.query_one("#cfg-new-region-name", Input).value = ""
             return
         self.query_one("#cfg-new-user-id", Input).value = user_id
-        self.query_one("#cfg-new-user-name", Input).value = get_user_name(region_id, user_id)
-        self._set_user_btn_mode("edit")
+        self.query_one("#cfg-new-user-name", Input).value = get_user_name(user_id)
+        # Populate region dropdown for this user
+        self.query_one("#cfg-edit-region-select", Select).set_options(
+            self._region_options_for_user(user_id)
+        )
+        self.query_one("#cfg-edit-region-select", Select).clear()
+        self.query_one("#cfg-new-region-id", Input).value = ""
+        self.query_one("#cfg-new-region-name", Input).value = ""
 
-    def _set_region_btn_mode(self, mode: str) -> None:
-        btn: Button = self.query_one("#cfg-add-region-btn")
-        if mode == "edit":
-            btn.label = "💾 Mentés"
-            btn.variant = "primary"
-        else:
-            btn.label = "+ Hozzáad"
-            btn.variant = "success"
-
-    def _set_user_btn_mode(self, mode: str) -> None:
-        btn: Button = self.query_one("#cfg-add-user-btn")
-        if mode == "edit":
-            btn.label = "💾 Mentés"
-            btn.variant = "primary"
-        else:
-            btn.label = "+ Hozzáad"
-            btn.variant = "success"
+    def _on_edit_region_changed(self, region_id, user_id: str) -> None:
+        """Fill region edit fields when a region is selected in the editor."""
+        if region_id is None or region_id is Select.BLANK or not isinstance(region_id, str):
+            self.query_one("#cfg-new-region-id", Input).value = ""
+            self.query_one("#cfg-new-region-name", Input).value = ""
+            return
+        self.query_one("#cfg-new-region-id", Input).value = region_id
+        self.query_one("#cfg-new-region-name", Input).value = get_region_name(user_id, region_id)
 
     def _apply_fulltopic_to_group_selects(self, full_topic: str) -> None:
-        """Parse FullTopic and set region/user dropdowns if values are recognised.
+        """Parse FullTopic and set user/region dropdowns if values are recognised.
 
-        Supports format: {region}/{user}/%topic%/%prefix%/
+        Supports format: {user}/{region}/%topic%/%prefix%/
         Ignores default Tasmota format: %prefix%/%topic%/
         """
         import re as _re
-        # Match: something/something/%topic%/%prefix%/ (our format)
         m = _re.match(r'^([^%/]+)/([^%/]+)/%topic%/%prefix%/', full_topic)
         if not m:
             return
-        region_id = m.group(1)
-        user_id = m.group(2)
-        # Check if region exists in groups.json
-        known_regions = [rid for rid, _ in list_regions()]
-        if region_id not in known_regions:
+        user_id = m.group(1)
+        region_id = m.group(2)
+        # Check if user exists as a top-level entry
+        known_users = [uid for uid, _ in list_users()]
+        if user_id not in known_users:
             self.notify(
-                f"FullTopic-ban talált régió ({region_id}) nem szerepel a csoportokban.",
+                f"FullTopic-ban talált user ({user_id}) nem szerepel a csoportokban.",
                 severity="warning",
                 timeout=6,
             )
             return
-        # Set region dropdown (this triggers on_select_changed → _on_region_changed
-        # which populates user options; we must set user value AFTER that refresh)
+        # Set user dropdown and populate region options for that user
         try:
-            region_sel: Select = self.query_one("#cfg-region-select")
-            region_sel.value = region_id
-            # Explicitly populate user options now (in case event fires async)
-            self.query_one("#cfg-user-select", Select).set_options(
-                self._user_options(region_id)
+            user_sel: Select = self.query_one("#cfg-user-select")
+            user_sel.value = user_id
+            self.query_one("#cfg-region-select", Select).set_options(
+                self._region_options_for_user(user_id)
             )
         except Exception:
             return
-        # Check if user exists in the region
-        known_users = [uid for uid, _ in list_users(region_id)]
-        if user_id not in known_users:
+        # Check if region exists under this user
+        known_regions = [rid for rid, _ in list_regions(user_id)]
+        if region_id not in known_regions:
             self.notify(
-                f"FullTopic-ban talált user ({user_id}) nem szerepel a(z) {region_id} régióban.",
+                f"FullTopic-ban talált régió ({region_id}) nem szerepel {user_id} useréhez.",
                 severity="warning",
                 timeout=6,
             )
             return
 
-        # Defer user value + FullTopic correction via a short timer so that
-        # set_options() reactive update fully completes before we set the value.
-        # call_after_refresh is too early on first load; 150 ms is reliable.
-        def _apply_user() -> None:
+        # Defer region value via timer so set_options() completes first
+        def _apply_region() -> None:
             try:
-                self.query_one("#cfg-user-select", Select).value = user_id
-                # Re-apply the correct FullTopic (region change may have reset it)
+                self.query_one("#cfg-region-select", Select).value = region_id
                 self._update_fulltopic_from_group()
             except Exception:
                 pass
 
-        self.set_timer(0.15, _apply_user)
+        self.set_timer(0.15, _apply_region)
         self.notify(
-            f"Régió és user beállítva: {region_id} / {user_id}",
+            f"User és régió beállítva: {user_id} / {region_id}",
             severity="information",
             timeout=4,
         )
 
     def _update_fulltopic_from_group(self) -> None:
-        """Rebuild the FullTopic input and preview when region/user/topic changes."""
-        region_sel: Select = self.query_one("#cfg-region-select")
+        """Rebuild the FullTopic input and preview when user/region/topic changes."""
         user_sel: Select = self.query_one("#cfg-user-select")
-        region_id = region_sel.value
+        region_sel: Select = self.query_one("#cfg-region-select")
         user_id = user_sel.value
-        rid = region_id if isinstance(region_id, str) and region_id else ""
+        region_id = region_sel.value
         uid = user_id if isinstance(user_id, str) and user_id else ""
+        rid = region_id if isinstance(region_id, str) and region_id else ""
         new_fulltopic = build_fulltopic(rid, uid)
         self.query_one("#cfg-mqtt-fulltopic", Input).value = new_fulltopic
         self._update_fulltopic_preview(rid, uid)
@@ -900,7 +977,7 @@ class ConfigTab(TabPane):
         try:
             device_id = self.query_one("#cfg-mqtt-topic", Input).value.strip() or "AABBCCDD"
             if region_id and user_id:
-                example = f"[dim]Példa:[/dim] {region_id}/{user_id}/{device_id}/tele/SENSOR"
+                example = f"[dim]Példa:[/dim] {user_id}/{region_id}/{device_id}/tele/SENSOR"
             else:
                 example = f"[dim]Példa:[/dim] tele/{device_id}/SENSOR"
             self.query_one("#cfg-fulltopic-preview").update(example)
@@ -908,66 +985,24 @@ class ConfigTab(TabPane):
             pass
 
     def _refresh_group_selects(self) -> None:
-        """Reload region options in both the main row and the editor."""
-        opts = self._region_options()
-        self.query_one("#cfg-region-select", Select).set_options(opts)
-        self._refresh_editor_region_select()
-
-    def _refresh_editor_region_select(self) -> None:
-        opts = self._region_options()
+        """Reload user options in both the main row and the editor."""
+        user_opts = self._user_options_top()
         try:
-            self.query_one("#cfg-edit-region-select", Select).set_options(opts)
+            self.query_one("#cfg-user-select", Select).set_options(user_opts)
+        except Exception:
+            pass
+        self._refresh_editor_user_select()
+
+    def _refresh_editor_user_select(self) -> None:
+        """Reload the user dropdown in the editor panel."""
+        user_opts = self._user_options_top()
+        try:
+            self.query_one("#cfg-edit-user-select", Select).set_options(user_opts)
         except Exception:
             pass
 
-    def _add_region(self) -> None:
-        new_id = self.query_one("#cfg-new-region-id", Input).value.strip()
-        new_name = self.query_one("#cfg-new-region-name", Input).value.strip()
-        if not new_id:
-            self.notify("Add meg a régió azonosítóját!", severity="warning")
-            return
-        sel: Select = self.query_one("#cfg-edit-region-select")
-        selected_id = sel.value if isinstance(sel.value, str) else ""
-        if selected_id:
-            # Edit mode – update existing region
-            if update_region(selected_id, new_id, new_name):
-                self._clear_region_fields()
-                self._refresh_group_selects()
-                self.notify(f"Régió módosítva: {new_id}", severity="information")
-            else:
-                self.notify("Hiba: az azonosító már foglalt!", severity="error")
-        else:
-            # Add mode – create new region
-            if add_region(new_id, new_name):
-                self._clear_region_fields()
-                self._refresh_group_selects()
-                self.notify(f"Régió hozzáadva: {new_id}", severity="information")
-            else:
-                self.notify(f"Ez a régió már létezik: {new_id}", severity="warning")
-
-    def _clear_region_fields(self) -> None:
-        self.query_one("#cfg-new-region-id", Input).value = ""
-        self.query_one("#cfg-new-region-name", Input).value = ""
-        self._set_region_btn_mode("add")
-
-    def _delete_region(self) -> None:
-        sel: Select = self.query_one("#cfg-edit-region-select")
-        rid = sel.value
-        if not isinstance(rid, str) or not rid:
-            self.notify("Válassz régiót a törléshez!", severity="warning")
-            return
-        if delete_region(rid):
-            self._refresh_group_selects()
-            self.notify(f"Régió törölve: {rid}", severity="information")
-        else:
-            self.notify("A régió nem található!", severity="error")
-
-    def _add_user(self) -> None:
-        region_sel: Select = self.query_one("#cfg-edit-region-select")
-        rid = region_sel.value
-        if not isinstance(rid, str) or not rid:
-            self.notify("Először válassz régiót!", severity="warning")
-            return
+    def _save_user(self) -> None:
+        """Save (add or update) a user from the editor fields."""
         new_uid = self.query_one("#cfg-new-user-id", Input).value.strip()
         new_uname = self.query_one("#cfg-new-user-name", Input).value.strip()
         if not new_uid:
@@ -977,42 +1012,108 @@ class ConfigTab(TabPane):
         selected_uid = user_sel.value if isinstance(user_sel.value, str) else ""
         if selected_uid:
             # Edit mode – update existing user
-            if update_user(rid, selected_uid, new_uid, new_uname):
-                self._clear_user_fields()
-                self.query_one("#cfg-edit-user-select", Select).set_options(self._user_options(rid))
+            if update_user(selected_uid, new_uid, new_uname):
+                self._refresh_group_selects()
+                # Re-select the updated user
+                def _reselect():
+                    try:
+                        self.query_one("#cfg-edit-user-select", Select).value = new_uid
+                    except Exception:
+                        pass
+                self.set_timer(0.1, _reselect)
                 self.notify(f"User módosítva: {new_uid}", severity="information")
             else:
                 self.notify("Hiba: az azonosító már foglalt!", severity="error")
         else:
             # Add mode – create new user
-            if add_user(rid, new_uid, new_uname):
-                self._clear_user_fields()
-                self.query_one("#cfg-edit-user-select", Select).set_options(self._user_options(rid))
+            if add_user(new_uid, new_uname):
+                self._refresh_group_selects()
+                self.query_one("#cfg-new-user-id", Input).value = ""
+                self.query_one("#cfg-new-user-name", Input).value = ""
                 self.notify(f"User hozzáadva: {new_uid}", severity="information")
             else:
                 self.notify(f"Ez a user már létezik: {new_uid}", severity="warning")
 
-    def _clear_user_fields(self) -> None:
-        self.query_one("#cfg-new-user-id", Input).value = ""
-        self.query_one("#cfg-new-user-name", Input).value = ""
-        self._set_user_btn_mode("add")
-
     def _delete_user(self) -> None:
-        region_sel: Select = self.query_one("#cfg-edit-region-select")
-        rid = region_sel.value
         user_sel: Select = self.query_one("#cfg-edit-user-select")
         uid = user_sel.value
-        if not isinstance(rid, str) or not rid:
-            self.notify("Válassz régiót!", severity="warning")
-            return
         if not isinstance(uid, str) or not uid:
             self.notify("Válassz usert a törléshez!", severity="warning")
             return
-        if delete_user(rid, uid):
-            self._on_edit_region_changed(rid)
-            self.notify(f"User törölve: {uid}", severity="information")
+        if delete_user(uid):
+            self._refresh_group_selects()
+            self.query_one("#cfg-edit-user-select", Select).clear()
+            self.query_one("#cfg-new-user-id", Input).value = ""
+            self.query_one("#cfg-new-user-name", Input).value = ""
+            self.query_one("#cfg-edit-region-select", Select).set_options([])
+            self.query_one("#cfg-new-region-id", Input).value = ""
+            self.query_one("#cfg-new-region-name", Input).value = ""
+            self.notify(f"User törölve: {uid} (összes régiójával együtt)", severity="information")
         else:
             self.notify("A user nem található!", severity="error")
+
+    def _save_region(self) -> None:
+        """Save (add or update) a region for the currently selected user."""
+        user_sel: Select = self.query_one("#cfg-edit-user-select")
+        uid = user_sel.value
+        if not isinstance(uid, str) or not uid:
+            self.notify("Először válassz usert!", severity="warning")
+            return
+        new_rid = self.query_one("#cfg-new-region-id", Input).value.strip()
+        new_rname = self.query_one("#cfg-new-region-name", Input).value.strip()
+        if not new_rid:
+            self.notify("Add meg a régió azonosítóját!", severity="warning")
+            return
+        region_sel: Select = self.query_one("#cfg-edit-region-select")
+        selected_rid = region_sel.value if isinstance(region_sel.value, str) else ""
+        if selected_rid:
+            # Edit mode – update existing region
+            if update_region(uid, selected_rid, new_rid, new_rname):
+                self.query_one("#cfg-edit-region-select", Select).set_options(
+                    self._region_options_for_user(uid)
+                )
+                def _reselect_region():
+                    try:
+                        self.query_one("#cfg-edit-region-select", Select).value = new_rid
+                    except Exception:
+                        pass
+                self.set_timer(0.1, _reselect_region)
+                self.notify(f"Régió módosítva: {new_rid}", severity="information")
+            else:
+                self.notify("Hiba: az azonosító már foglalt!", severity="error")
+        else:
+            # Add mode – create new region under selected user
+            if add_region(uid, new_rid, new_rname):
+                self.query_one("#cfg-edit-region-select", Select).set_options(
+                    self._region_options_for_user(uid)
+                )
+                self.query_one("#cfg-new-region-id", Input).value = ""
+                self.query_one("#cfg-new-region-name", Input).value = ""
+                self.notify(f"Régió hozzáadva: {new_rid} ({uid})", severity="information")
+            else:
+                self.notify(f"Ez a régió már létezik: {new_rid}", severity="warning")
+
+    def _delete_region(self) -> None:
+        user_sel: Select = self.query_one("#cfg-edit-user-select")
+        uid = user_sel.value
+        region_sel: Select = self.query_one("#cfg-edit-region-select")
+        rid = region_sel.value
+        if not isinstance(uid, str) or not uid:
+            self.notify("Válassz usert!", severity="warning")
+            return
+        if not isinstance(rid, str) or not rid:
+            self.notify("Válassz régiót a törléshez!", severity="warning")
+            return
+        if delete_region(uid, rid):
+            self.query_one("#cfg-edit-region-select", Select).set_options(
+                self._region_options_for_user(uid)
+            )
+            self.query_one("#cfg-edit-region-select", Select).clear()
+            self.query_one("#cfg-new-region-id", Input).value = ""
+            self.query_one("#cfg-new-region-name", Input).value = ""
+            self.notify(f"Régió törölve: {rid}", severity="information")
+        else:
+            self.notify("A régió nem található!", severity="error")
 
     # ------------------------------------------------------------------
     # GPIO management – interactive board diagram
@@ -1023,10 +1124,8 @@ class ConfigTab(TabPane):
         return {k: v for k, v in self._gpio_assignments.items() if v and v != "none"}
 
     def clear_device_data(self) -> None:
-        """Reset device-specific state (called when a new serial connection is made)."""
-        self._gpio_assignments = {}
-        self._selected_gpio = None
-        self._rebuild_board_diagram()
+        """Reset all device-specific state (on connect or disconnect)."""
+        self._reset_config()
 
     def _get_current_board(self) -> Optional[BoardLayout]:
         """Return the BoardLayout matching the currently selected module."""
@@ -1037,6 +1136,44 @@ class ConfigTab(TabPane):
         except Exception:
             pass
         return None
+
+    def set_module_silent(self, board_name: str) -> None:
+        """Update cfg-module without triggering _apply_module_defaults.
+
+        Called by the app-level cross-tab sync (board-type-select → cfg-module)
+        so that Board tab auto-poll does not wipe Config tab GPIO assignments.
+        """
+        try:
+            sel: Select = self.query_one("#cfg-module", Select)
+            if sel.value == board_name:
+                return
+            self._suppress_module_defaults = True
+            sel.value = board_name
+            # Clear the flag after Textual's reactive cycle processes the change
+            self.call_after_refresh(self._clear_suppress_flag)
+        except Exception:
+            self._suppress_module_defaults = False
+
+    def _clear_suppress_flag(self) -> None:
+        self._suppress_module_defaults = False
+
+    def _apply_module_defaults(self, module_name: str) -> None:
+        """Replace _gpio_assignments with the factory defaults for *module_name*.
+
+        Generic boards (Wemos D1 Mini, ESP32 DevKit…) have an empty default
+        so selecting them clears any previous assignment from another device.
+        Unknown names are silently ignored – existing assignments stay intact.
+        """
+        if module_name not in DEFAULT_GPIO_ASSIGNMENTS:
+            return
+        self._gpio_assignments = dict(DEFAULT_GPIO_ASSIGNMENTS[module_name])
+        # Clear the currently selected GPIO so the detail panel doesn't show
+        # stale data for a pin that may not exist on the new board.
+        self._selected_gpio = None
+        try:
+            self.query_one("#pin-config-form").display = False
+        except Exception:
+            pass
 
     def _rebuild_board_diagram(self) -> None:
         """Re-mount the InteractiveBoardDiagram for the selected board.
@@ -1056,6 +1193,10 @@ class ConfigTab(TabPane):
                 return
             board = self._get_current_board()
             if not board:
+                # No dedicated board layout for this module (e.g. Sonoff devices).
+                # Refresh the colors on whatever diagram is currently shown.
+                self._refresh_all_diagram_pins()
+                self._update_preview()
                 return
             try:
                 container = self.query_one("#gpio-diagram-container")
@@ -1135,6 +1276,24 @@ class ConfigTab(TabPane):
                 btn.variant = "default"
         except Exception:
             pass
+
+    def _refresh_all_diagram_pins(self) -> None:
+        """Refresh every pin color on the current diagram to match _gpio_assignments.
+
+        Called when switching to a module that has no dedicated BoardLayout (e.g.
+        Sonoff devices). The existing diagram stays mounted but all its pin buttons
+        are re-colored: assigned pins turn green, previously-assigned-but-now-clear
+        pins revert to default.
+        """
+        try:
+            diag: InteractiveBoardDiagram = self.query_one(InteractiveBoardDiagram)
+        except Exception:
+            return
+        for pin in diag._layout.pins:
+            if pin.gpio is None or pin.is_power or pin.is_uart or pin.adc_only:
+                continue
+            type_id = self._gpio_assignments.get(pin.gpio, "none")
+            diag.update_pin(pin.gpio, type_id)
 
     def _set_pin(self) -> None:
         """Save the selected function for the currently highlighted pin."""
@@ -1284,7 +1443,7 @@ class ConfigTab(TabPane):
                 topic=_val("#cfg-mqtt-topic"),
                 full_topic=_val("#cfg-mqtt-fulltopic") or "%prefix%/%topic%/",
             ),
-            tele_period=int(_val("#cfg-teleperiod") or "300"),
+            tele_period=300,
             module_type=board_name,
             gpio={str(k): v for k, v in assignments.items()},
         )
@@ -1303,7 +1462,6 @@ class ConfigTab(TabPane):
             ("#cfg-mqtt-user", ""), ("#cfg-mqtt-pass", ""),
             ("#cfg-mqtt-topic", ""),
             ("#cfg-mqtt-fulltopic", "%prefix%/%topic%/"),
-            ("#cfg-teleperiod", "300"),
         ]
         for widget_id, value in defaults:
             try:
@@ -1315,10 +1473,10 @@ class ConfigTab(TabPane):
             self.query_one("#cfg-module", Select).value = D1_MINI.name
         except Exception:
             pass
-        # Reset region/user selects
+        # Reset user/region selects
         try:
-            self.query_one("#cfg-region-select", Select).value = Select.BLANK
-            self.query_one("#cfg-user-select", Select).set_options([])
+            self.query_one("#cfg-user-select", Select).clear()
+            self.query_one("#cfg-region-select", Select).set_options([])
         except Exception:
             pass
         # Reset GPIO assignments and diagram
@@ -1396,7 +1554,6 @@ class ConfigTab(TabPane):
         _set("#cfg-mqtt-pass", cfg.mqtt.password)
         _set("#cfg-mqtt-topic", cfg.mqtt.topic or cfg.topic)
         _set("#cfg-mqtt-fulltopic", cfg.mqtt.full_topic)
-        _set("#cfg-teleperiod", str(cfg.tele_period))
 
         # Board / Module select
         try:
@@ -1405,15 +1562,15 @@ class ConfigTab(TabPane):
         except Exception:
             pass
 
-        # Region / User dropdowns
-        if cfg.region_id:
+        # User / Region dropdowns (user-first)
+        if cfg.user_id:
             try:
-                region_sel: Select = self.query_one("#cfg-region-select")
-                region_sel.value = cfg.region_id
-                # Populate user dropdown for this region
-                self._on_region_changed(cfg.region_id)
-                if cfg.user_id:
-                    self.query_one("#cfg-user-select", Select).value = cfg.user_id
+                user_sel: Select = self.query_one("#cfg-user-select")
+                user_sel.value = cfg.user_id
+                # Populate region dropdown for this user
+                self._on_main_user_changed(cfg.user_id)
+                if cfg.region_id:
+                    self.query_one("#cfg-region-select", Select).value = cfg.region_id
             except Exception:
                 pass
 
@@ -1436,11 +1593,12 @@ class ConfigTab(TabPane):
     # ------------------------------------------------------------------
 
     async def _fetch_config_from_device(self) -> None:
-        serial_bridge = self.app.serial_bridge  # type: ignore[attr-defined]
+        app = self.app  # type: ignore[attr-defined]
+        bridge = app.http_bridge if app.http_bridge.is_connected else app.serial_bridge
         status_lbl: Label = self.query_one("#cfg-fetch-status")
 
-        if not serial_bridge.is_connected:
-            self.notify("Nincs soros port kapcsolat! (Serial tab → Csatlakozás)", severity="warning")
+        if not bridge.is_connected:
+            self.notify("Nincs kapcsolat! (Serial tab → Csatlakozás / HTTP)", severity="warning")
             return
 
         status_lbl.update("[yellow]Lekérés…[/yellow]")
@@ -1449,30 +1607,36 @@ class ConfigTab(TabPane):
 
         try:
             # Clear buffer so we only parse fresh responses
-            serial_bridge.clear_buffer()
+            bridge.clear_buffer()
 
-            # Send all status and config queries
+            # Send all status and config queries (non-blocking for HTTP)
             # Status 0 = full status dump; in Tasmota 15 Topic/Module are ONLY here
-            serial_bridge.send("Status 0")
+            await app.send_cmd_async("Status 0")
             await asyncio.sleep(0.6)
-            serial_bridge.send("Status 1")   # StatusPRM (baudrate, OTA url, etc.)
+            await app.send_cmd_async("Status 1")   # StatusPRM
             await asyncio.sleep(0.4)
-            serial_bridge.send("Status 5")   # active WiFi SSID, IP (no password)
+            await app.send_cmd_async("Status 5")   # active WiFi SSID, IP
             await asyncio.sleep(0.4)
-            serial_bridge.send("Ssid1")      # configured SSID1 (regardless of active conn.)
+            await app.send_cmd_async("Ssid1")      # configured SSID1
             await asyncio.sleep(0.3)
-            serial_bridge.send("Ssid2")      # configured SSID2 (backup network)
+            await app.send_cmd_async("Ssid2")      # configured SSID2
             await asyncio.sleep(0.3)
-            serial_bridge.send("Status 6")   # MQTT host, port, user (no password)
+            await app.send_cmd_async("Status 6")   # MQTT host, port, user
             await asyncio.sleep(0.4)
-            serial_bridge.send("Status 2")   # Firmware / chip hardware
+            await app.send_cmd_async("Status 2")   # Firmware / chip hardware
             await asyncio.sleep(0.4)
-            serial_bridge.send("GPIO")        # GPIO function assignments
-            await asyncio.sleep(1.0)         # Wait for all responses to arrive
+            await app.send_cmd_async("GPIO")       # GPIO function assignments
+            await asyncio.sleep(0.5)
+            await app.send_cmd_async("Mem1")       # Board type stored by SmartBlue
+            await asyncio.sleep(1.0)   # Wait for all responses to arrive
 
-            lines = list(serial_bridge.line_buffer)
+            lines = list(bridge.line_buffer)
             filled: list[str] = []
             skipped: list[str] = []
+
+            # Suppress _apply_module_defaults for the entire sync section so
+            # programmatic cfg-module updates never wipe device GPIO assignments.
+            self._suppress_module_defaults = True
 
             # --- Parse Status 1 (device info) --------------------------
             s1 = parse_status1(lines)
@@ -1481,7 +1645,7 @@ class ConfigTab(TabPane):
                 filled.append("Topic")
             # --- Try to infer FullTopic from MQT: log lines ---------------
             # Tasmota 15 does not include FullTopic in StatusPRM, but the
-            # device logs every MQTT publish (e.g. "MQT: region/user/topic/stat/STATUS")
+            # device logs every MQTT publish (e.g. "MQT: user/region/topic/stat/STATUS")
             device_topic_for_ft = s1.get("topic", "")
             inferred_fulltopic = parse_fulltopic_from_mqt_lines(lines, device_topic_for_ft)
             if inferred_fulltopic:
@@ -1491,18 +1655,17 @@ class ConfigTab(TabPane):
                 full_topic = s1["full_topic"]
                 self._set_input("#cfg-mqtt-fulltopic", full_topic)
                 filled.append("FullTopic")
-                # Try to extract region/user from the FullTopic
-                # Expected format: {region}/{user}/%topic%/%prefix%/
+                # Try to extract user/region from the FullTopic
+                # Expected format: {user}/{region}/%topic%/%prefix%/
                 self._apply_fulltopic_to_group_selects(full_topic)
+
+            # Collect board name from Status 1 module_type (fallback only)
+            _board_from_module: Optional[str] = None
             if s1.get("module_type") is not None:   # Module 0 is valid (falsy in Python!)
                 try:
                     from tasmota_manager.board_layouts import TASMOTA_MODULE_TO_BOARD
                     mod_id = int(s1["module_type"])
-                    board_name = TASMOTA_MODULE_TO_BOARD.get(mod_id)
-                    if board_name:
-                        sel: Select = self.query_one("#cfg-module")
-                        sel.value = board_name
-                        filled.append(f"Modul → {board_name}")
+                    _board_from_module = TASMOTA_MODULE_TO_BOARD.get(mod_id)
                 except Exception:
                     pass
 
@@ -1539,13 +1702,41 @@ class ConfigTab(TabPane):
             # --- Parse Status 2 (chip/hardware detection) --------------
             chip = parse_status2(lines)
             if chip:
-                serial_bridge.detected_chip = chip
+                # Store detected chip on whichever bridge is active.
+                bridge.detected_chip = chip
                 status_lbl.update(f"[green]● Chip: {chip}[/green]")
                 filled.append(f"Chip: {chip}")
             else:
                 status_lbl.update("[dim]Chip nem azonosítható[/dim]")
 
-            # --- Parse GPIO assignments ---------------------------------
+            # --- Parse Mem1 (board type, highest priority) ----------------
+            mem1_value = _parse_mem1(lines)
+            if mem1_value:
+                app.device_board_type = mem1_value
+
+            # Determine the one board name to set (Mem1 wins over module_type mapping)
+            from tasmota_manager.board_layouts import BOARD_BY_NAME
+            best_board: Optional[str] = None
+            if mem1_value and mem1_value in BOARD_BY_NAME:
+                best_board = mem1_value
+                filled.append(f"Board (Mem1): {mem1_value}")
+            elif _board_from_module:
+                best_board = _board_from_module
+                filled.append(f"Modul → {best_board}")
+            elif mem1_value:
+                filled.append(f"Board (Mem1, ismeretlen): {mem1_value}")
+
+            # Set cfg-module exactly ONCE so board-type-select only changes once.
+            if best_board:
+                try:
+                    sel: Select = self.query_one("#cfg-module", Select)
+                    sel.value = best_board
+                except Exception:
+                    pass
+
+            # --- Parse GPIO assignments (set AFTER cfg-module) ------------
+            # By setting GPIO here, _rebuild_board_diagram uses device data even
+            # when the deferred on_select_changed for cfg-module fires later.
             gpio_from_device = _parse_gpio_from_device(lines)
             if gpio_from_device:
                 self._gpio_assignments = gpio_from_device
@@ -1554,6 +1745,10 @@ class ConfigTab(TabPane):
                     f"GPIO{g}={t}" for g, t in sorted(gpio_from_device.items())
                 )
                 filled.append(f"GPIO ({len(gpio_from_device)} pin): {summary}")
+
+            # Release suppression after the next DOM refresh so all Changed
+            # events queued above are still processed with the flag active.
+            self.call_after_refresh(self._clear_suppress_flag)
 
             # --- Summary notification ----------------------------------
             filled_str = ", ".join(filled) if filled else "–"
@@ -1592,13 +1787,14 @@ class ConfigTab(TabPane):
 
         MQTT lines with individual NET results are also captured from the buffer.
         """
-        serial_bridge = self.app.serial_bridge  # type: ignore[attr-defined]
+        app = self.app  # type: ignore[attr-defined]
+        bridge = app.http_bridge if app.http_bridge.is_connected else app.serial_bridge
         status_lbl: Label = self.query_one("#wifi-scan-status")
         scan_btn: Button = self.query_one("#wifi-scan-btn")
 
-        if not serial_bridge.is_connected:
+        if not bridge.is_connected:
             self.notify(
-                "Nincs soros port kapcsolat!\nCsatlakozz a Serial tabon, majd próbáld újra.",
+                "Nincs kapcsolat!\nCsatlakozz a Serial tabon, majd próbáld újra.",
                 severity="warning",
             )
             return
@@ -1611,8 +1807,8 @@ class ConfigTab(TabPane):
             # Start the scan – results arrive AUTOMATICALLY as individual
             # RSL: RESULT = {"WiFiScan":{"NET1":{...}}} lines after scan completes.
             # There is NO need to send a second query; just wait for the device.
-            serial_bridge.clear_buffer()
-            serial_bridge.send("WifiScan 1")
+            bridge.clear_buffer()
+            await app.send_cmd_async("WifiScan 1")
 
             # Poll the buffer every 0.5 s; give up after SCAN_TIMEOUT seconds.
             # Once the first NET result arrives, wait one extra second for the
@@ -1628,7 +1824,7 @@ class ConfigTab(TabPane):
                 await asyncio.sleep(CHECK_INTERVAL)
                 elapsed += CHECK_INTERVAL
 
-                lines   = list(serial_bridge.line_buffer)
+                lines    = list(bridge.line_buffer)
                 networks = parse_wifi_scan(lines)
 
                 if networks:
@@ -1647,7 +1843,7 @@ class ConfigTab(TabPane):
                     )
 
             # Final parse of everything collected
-            lines    = list(serial_bridge.line_buffer)
+            lines    = list(bridge.line_buffer)
             networks = parse_wifi_scan(lines)
             scan_sel: Select = self.query_one("#wifi-scan-select")
 
@@ -1693,9 +1889,10 @@ class ConfigTab(TabPane):
             pass
 
     def _send_via_serial(self) -> None:
-        serial_bridge = self.app.serial_bridge  # type: ignore[attr-defined]
-        if not serial_bridge.is_connected:
-            self.notify("Nincs soros port kapcsolat!", severity="warning")
+        app = self.app  # type: ignore[attr-defined]
+        serial_bridge = app.serial_bridge
+        if not serial_bridge.is_connected and not app.http_bridge.is_connected:
+            self.notify("Nincs kapcsolat! (Serial tab → Csatlakozás / HTTP)", severity="warning")
             return
         cfg = self._build_config()
         cmds = cfg.to_tasmota_commands()   # list of (cmd, val) tuples
@@ -1713,6 +1910,15 @@ class ConfigTab(TabPane):
         phase1: list[str] = []
         module_cmd: str   = ""
         gpio_cmds:  list[str] = []
+
+        # Derive board type (Mem1) from cfg-module selection
+        try:
+            board_type_val = str(self.query_one("#cfg-module", Select).value or "")
+            if board_type_val:
+                phase1.append(f"Mem1 {board_type_val}")
+                self.app.device_board_type = board_type_val  # type: ignore[attr-defined]
+        except Exception:
+            pass
 
         for cmd, val in cmds:
             full = f"{cmd} {val}"
@@ -1732,14 +1938,13 @@ class ConfigTab(TabPane):
 
         self.app.run_worker(  # type: ignore[attr-defined]
             self._do_send_serial(
-                serial_bridge, phase1, module_cmd, gpio_backlog, len(gpio_cmds)
+                phase1, module_cmd, gpio_backlog, len(gpio_cmds)
             ),
             exclusive=False,
         )
 
     async def _do_send_serial(
         self,
-        serial_bridge,
         phase1: list[str],
         module_cmd: str,
         gpio_backlog: str,
@@ -1748,15 +1953,23 @@ class ConfigTab(TabPane):
         """Async worker: sends config in phases, waiting for reboot if Module changes."""
         import asyncio as _asyncio
 
+        app = self.app  # type: ignore[attr-defined]
+        serial_bridge = app.serial_bridge
+
         try:
             # Phase 1: WiFi / MQTT / general settings individually
             if phase1:
-                serial_bridge.comm.send_config_block(phase1, delay=0.2)
+                if serial_bridge.is_connected:
+                    serial_bridge.comm.send_config_block(phase1, delay=0.2)
+                else:
+                    for cmd in phase1:
+                        await app.send_cmd_async(cmd)
+                        await _asyncio.sleep(0.2)
                 await _asyncio.sleep(0.5)
 
             # Phase 2: Module (if needed) – triggers reboot, wait for device to come back
             if module_cmd:
-                serial_bridge.send(module_cmd)
+                await app.send_cmd_async(module_cmd)
                 self.notify(
                     "Module parancs elküldve – várakozás az újraindulásra (6 mp)…",
                     severity="information",
@@ -1766,7 +1979,7 @@ class ConfigTab(TabPane):
 
             # Phase 3: GPIO + Restart (Backlog0, no Module inside)
             if gpio_backlog:
-                serial_bridge.send(gpio_backlog)
+                await app.send_cmd_async(gpio_backlog)
 
             self.notify(
                 f"Konfig elküldve: {len(phase1)} alap parancs"
@@ -1796,6 +2009,304 @@ class ConfigTab(TabPane):
         self.app.sync_gpio_to_board()  # type: ignore[attr-defined]
         mqtt_mgr.publish(f"cmnd/{topic}/Restart", "1")
         self.notify(f"Konfig elküldve MQTT-n: cmnd/{topic}/…", severity="information")
+
+    # ------------------------------------------------------------------
+    # HTTP backup / restore
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _backup_dir() -> "Path":
+        from pathlib import Path
+        from tasmota_manager.config_builder import PROFILES_DIR
+        backup_dir = PROFILES_DIR.parent / "backups"
+        backup_dir.mkdir(exist_ok=True)
+        return backup_dir
+
+    def _refresh_backup_list(self) -> None:
+        """Refresh the restore Select with .dmp files from the backups/ folder."""
+        try:
+            files = sorted(self._backup_dir().glob("*.dmp"), reverse=True)
+            sel: Select = self.query_one("#cfg-restore-select")
+            if files:
+                options = [(f.name, str(f)) for f in files]
+            else:
+                options = [("– nincs backup fájl –", "__none")]
+            sel.set_options(options)
+        except Exception:
+            pass
+
+    async def _do_backup(self) -> None:
+        from datetime import datetime
+        http_bridge = self.app.http_bridge  # type: ignore[attr-defined]
+        status_lbl: Label = self.query_one("#cfg-backup-status")
+
+        if not http_bridge.is_connected:
+            self.notify("HTTP kapcsolat szükséges a backuphoz!", severity="warning")
+            return
+
+        status_lbl.update("[yellow]Backup letöltése…[/yellow]")
+        try:
+            data = await asyncio.get_event_loop().run_in_executor(
+                None, http_bridge.download_config
+            )
+            if not data:
+                status_lbl.update("[red]Sikertelen letöltés[/red]")
+                self.notify("Backup letöltése sikertelen!", severity="error")
+                return
+
+            ip_short = http_bridge.ip.replace("http://", "").replace(".", "_")
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"{ip_short}_{ts}.dmp"
+            backup_path = self._backup_dir() / filename
+            backup_path.write_bytes(data)
+
+            status_lbl.update(f"[green]✓ {filename}  ({len(data)} byte)[/green]")
+            self.notify(
+                f"Backup mentve: {backup_path}",
+                severity="information",
+                timeout=10,
+            )
+            self._refresh_backup_list()
+        except Exception as exc:
+            status_lbl.update(f"[red]Hiba: {exc}[/red]")
+
+    async def _do_restore(self) -> None:
+        http_bridge = self.app.http_bridge  # type: ignore[attr-defined]
+        status_lbl: Label = self.query_one("#cfg-backup-status")
+
+        if not http_bridge.is_connected:
+            self.notify("HTTP kapcsolat szükséges a visszatöltéshez!", severity="warning")
+            return
+
+        sel: Select = self.query_one("#cfg-restore-select")
+        path_str = str(sel.value)
+        if not path_str or path_str == "__none" or sel.value is Select.BLANK:
+            self.notify("Nincs backup fájl kiválasztva!", severity="warning")
+            return
+
+        from pathlib import Path
+        backup_path = Path(path_str)
+        if not backup_path.exists():
+            status_lbl.update("[red]Fájl nem található[/red]")
+            return
+
+        status_lbl.update("[yellow]Visszatöltés…[/yellow]")
+        try:
+            data = backup_path.read_bytes()
+            ok = await asyncio.get_event_loop().run_in_executor(
+                None, http_bridge.upload_config, data
+            )
+            if ok:
+                status_lbl.update("[green]✓ Visszatöltve – az eszköz újraindul[/green]")
+                self.notify(
+                    f"Konfig visszatöltve ({backup_path.name}). Az eszköz újraindul.",
+                    severity="information",
+                    timeout=8,
+                )
+            else:
+                status_lbl.update("[red]Visszatöltés sikertelen[/red]")
+                self.notify("Konfig visszatöltés sikertelen!", severity="error")
+        except Exception as exc:
+            status_lbl.update(f"[red]Hiba: {exc}[/red]")
+
+    # ------------------------------------------------------------------
+    # DMP binary parse and multi-tab load
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _find_python() -> Optional[str]:
+        """Find a usable Python interpreter.
+
+        When running from source: use the current interpreter.
+        When running from a PyInstaller exe: look for Python in PATH.
+        """
+        import shutil
+        if not getattr(sys, "frozen", False):
+            return sys.executable
+        for candidate in ("python.exe", "python3.exe", "py.exe", "python3", "python"):
+            found = shutil.which(candidate)
+            if found:
+                return found
+        return None
+
+    @staticmethod
+    def _find_decode_script() -> Optional[Path]:
+        """Locate decode_config_tool.py.
+
+        Checks _MEIPASS (PyInstaller _internal/), next to the exe, and the
+        development project root.
+        """
+        candidates: list[Path] = []
+        # PyInstaller: resources are in sys._MEIPASS (_internal/)
+        meipass = getattr(sys, "_MEIPASS", None)
+        if meipass:
+            candidates.append(Path(meipass) / "decode_config_tool.py")
+        # Next to the exe (top-level dist folder)
+        candidates.append(Path(sys.executable).parent / "decode_config_tool.py")
+        # Development: three levels up from this file → tasmota-manager/
+        candidates.append(Path(__file__).parent.parent.parent / "decode_config_tool.py")
+        for p in candidates:
+            if p.exists():
+                return p
+        return None
+
+    async def _parse_dmp(self, dmp_path: Path) -> Optional[dict]:
+        """Call decode_config_tool.py as subprocess and return parsed JSON."""
+        python = self._find_python()
+        if not python:
+            self.notify(
+                "Python interpreter nem található!\n"
+                "Telepítsd a Pythont, hogy a backup parse-olás működjön.",
+                severity="error", timeout=10,
+            )
+            return None
+        script = self._find_decode_script()
+        if not script:
+            self.notify(
+                "decode_config_tool.py nem található!\n"
+                "Ellenőrizd, hogy a fájl az exe mellett van.",
+                severity="error", timeout=10,
+            )
+            return None
+        try:
+            loop = asyncio.get_running_loop()
+            result = await loop.run_in_executor(
+                None,
+                lambda: subprocess.run(
+                    [python, str(script),
+                     "-s", str(dmp_path.resolve()),   # plain path (not URI) for reliability
+                     "-T", "json",
+                     "-S",                            # force stdout output
+                     "--json-show-pw",
+                     "--json-indent", "-1"],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+            )
+            if result.returncode not in (0, 1):  # 0=ok, 1=restore skipped (non-fatal)
+                self.notify(
+                    f"decode-config hiba (exit {result.returncode}):\n"
+                    f"{(result.stderr or result.stdout)[:300]}",
+                    severity="error", timeout=12,
+                )
+                return None
+            stdout = result.stdout.strip()
+            if not stdout:
+                self.notify(
+                    f"decode-config: üres kimenet\nstderr: {result.stderr[:300]}",
+                    severity="error", timeout=12,
+                )
+                return None
+            return json.loads(stdout)
+        except Exception as exc:
+            self.notify(f"Parse hiba: {exc}", severity="error")
+            return None
+
+    async def _do_load_from_dmp(self) -> None:
+        """Load all fields from the selected .dmp backup into Config, Board, Rules tabs."""
+        sel: Select = self.query_one("#cfg-restore-select")
+        path_str = str(sel.value)
+        if not path_str or path_str == "__none" or sel.value is Select.BLANK:
+            self.notify("Nincs backup fájl kiválasztva!", severity="warning")
+            return
+
+        dmp_path = Path(path_str)
+        if not dmp_path.exists():
+            self.notify(f"Fájl nem található: {dmp_path}", severity="error")
+            return
+
+        status_lbl: Label = self.query_one("#cfg-backup-status")
+        status_lbl.update("[yellow]Parse-olás…[/yellow]")
+
+        data = await self._parse_dmp(dmp_path)
+        if not data:
+            status_lbl.update("[red]Parse sikertelen[/red]")
+            return
+
+        filled = self._apply_dmp_data(data)
+        status_lbl.update(f"[green]✓ {dmp_path.name} betöltve ({filled} mező)[/green]")
+        self.notify(
+            f"Backup betöltve: {filled} mező kitöltve\n({dmp_path.name})",
+            severity="information", timeout=8,
+        )
+
+    def _apply_dmp_data(self, data: dict) -> int:
+        """Fill Config, Board and Rules tabs from a decoded .dmp dict.
+
+        Returns the number of fields that were filled.
+        """
+        filled = 0
+
+        def _s(val) -> str:
+            return str(val) if val is not None else ""
+
+        # --- WiFi ---
+        sta_ssid = data.get("sta_ssid") or []
+        sta_pwd  = data.get("sta_pwd")  or []
+        if len(sta_ssid) > 0 and sta_ssid[0]:
+            self._set_input("#cfg-ssid1", _s(sta_ssid[0]));  filled += 1
+        if len(sta_ssid) > 1 and sta_ssid[1]:
+            self._set_input("#cfg-ssid2", _s(sta_ssid[1]));  filled += 1
+        if len(sta_pwd) > 0 and sta_pwd[0]:
+            self._set_input("#cfg-pass1", _s(sta_pwd[0]));   filled += 1
+        if len(sta_pwd) > 1 and sta_pwd[1]:
+            self._set_input("#cfg-pass2", _s(sta_pwd[1]));   filled += 1
+
+        # --- MQTT ---
+        for key, widget_id in [
+            ("mqtt_host",      "#cfg-mqtt-host"),
+            ("mqtt_user",      "#cfg-mqtt-user"),
+            ("mqtt_pwd",       "#cfg-mqtt-pass"),
+            ("mqtt_topic",     "#cfg-mqtt-topic"),
+            ("mqtt_fulltopic", "#cfg-mqtt-fulltopic"),
+        ]:
+            val = data.get(key)
+            if val:
+                self._set_input(widget_id, _s(val))
+                filled += 1
+        if data.get("mqtt_port"):
+            self._set_input("#cfg-mqtt-port", _s(data["mqtt_port"]))
+            filled += 1
+
+        # --- GPIO assignments → Config tab + Board tab ---
+        gpio_list = (
+            data.get("gpio")
+            or (data.get("user_template") or {}).get("gpio")
+            or (data.get("user_template_esp32") or {}).get("gpio")
+            or []
+        )
+        if gpio_list:
+            gpio_assignments: dict[int, str] = {}
+            for idx, code in enumerate(gpio_list):
+                if isinstance(code, int) and code != 0:
+                    type_id = _to_type(code)
+                    if type_id and type_id != "none":
+                        gpio_assignments[idx] = type_id
+            if gpio_assignments:
+                self._gpio_assignments = gpio_assignments
+                filled += len(gpio_assignments)
+                # Rebuild board diagram and push to Board tab
+                self._rebuild_board_diagram()
+                try:
+                    self.app.sync_gpio_to_board()  # type: ignore[attr-defined]
+                except Exception:
+                    pass
+
+        # --- Rules → Rules tab ---
+        rules_list = data.get("rules") or []
+        if rules_list:
+            try:
+                from tasmota_manager.screens.rules_screen import RulesTab
+                rules_tab: RulesTab = self.app.query_one(RulesTab)  # type: ignore[attr-defined]
+                rules_tab.load_rules_from_backup(rules_list)
+                non_empty = sum(1 for r in rules_list if r)
+                if non_empty:
+                    filled += non_empty
+            except Exception:
+                pass
+
+        return filled
 
     # ------------------------------------------------------------------
     # Helpers

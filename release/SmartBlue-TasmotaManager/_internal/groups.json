@@ -1,12 +1,34 @@
 {
-  "regions": [
+  "users": [
     {
-      "id": "demo_region123456",
-      "name": "Demo régió",
-      "users": [
+      "id": "demo_user_123456",
+      "name": "Demo felhasználó neve",
+      "regions": [
         {
-          "id": "demo_user_123456",
-          "name": "Demo felhasználó"
+          "id": "demo_region123456",
+          "name": "Demo régió n"
+        },
+        {
+          "id": "haz_1",
+          "name": "Ház 1"
+        },
+        {
+          "id": "haz2",
+          "name": "Ház 2"
+        }
+      ]
+    },
+    {
+      "id": "smart_blue_proba_user_1",
+      "name": "Próba 1",
+      "regions": [
+        {
+          "id": "haz_1",
+          "name": "Ház 1"
+        },
+        {
+          "id": "haz 2",
+          "name": "Ház 2"
         }
       ]
     }
