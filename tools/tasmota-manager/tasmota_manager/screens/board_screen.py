@@ -806,7 +806,11 @@ class BoardTab(TabPane):
     # ------------------------------------------------------------------
 
     async def _chip_watcher(self) -> None:
-        """Auto-select board type when chip is detected via serial."""
+        """Auto-select board type when chip is detected via serial.
+
+        Skipped when a Mem1 board type is already set – that has higher priority
+        and we must not oscillate between the chip default and the Mem1 value.
+        """
         from tasmota_manager.board_layouts import CHIP_DEFAULT_BOARD
         serial_bridge = self.app.serial_bridge  # type: ignore[attr-defined]
         last_chip: Optional[str] = None
@@ -814,6 +818,10 @@ class BoardTab(TabPane):
             chip = serial_bridge.detected_chip
             if chip and chip != last_chip:
                 last_chip = chip
+                # Don't override a Mem1-stored board type with the generic chip default.
+                if self.app.device_board_type:  # type: ignore[attr-defined]
+                    await asyncio.sleep(1.0)
+                    continue
                 board_name = CHIP_DEFAULT_BOARD.get(chip)
                 if board_name and board_name in BOARD_BY_NAME:
                     sel: Select = self.query_one("#board-type-select")

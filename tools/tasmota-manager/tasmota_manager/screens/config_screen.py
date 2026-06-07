@@ -1634,6 +1634,10 @@ class ConfigTab(TabPane):
             filled: list[str] = []
             skipped: list[str] = []
 
+            # Suppress _apply_module_defaults for the entire sync section so
+            # programmatic cfg-module updates never wipe device GPIO assignments.
+            self._suppress_module_defaults = True
+
             # --- Parse Status 1 (device info) --------------------------
             s1 = parse_status1(lines)
             if s1.get("topic"):
@@ -1654,17 +1658,14 @@ class ConfigTab(TabPane):
                 # Try to extract user/region from the FullTopic
                 # Expected format: {user}/{region}/%topic%/%prefix%/
                 self._apply_fulltopic_to_group_selects(full_topic)
+
+            # Collect board name from Status 1 module_type (fallback only)
+            _board_from_module: Optional[str] = None
             if s1.get("module_type") is not None:   # Module 0 is valid (falsy in Python!)
                 try:
                     from tasmota_manager.board_layouts import TASMOTA_MODULE_TO_BOARD
                     mod_id = int(s1["module_type"])
-                    board_name = TASMOTA_MODULE_TO_BOARD.get(mod_id)
-                    if board_name:
-                        self._suppress_module_defaults = True
-                        sel: Select = self.query_one("#cfg-module")
-                        sel.value = board_name
-                        self.call_after_refresh(self._clear_suppress_flag)
-                        filled.append(f"Modul → {board_name}")
+                    _board_from_module = TASMOTA_MODULE_TO_BOARD.get(mod_id)
                 except Exception:
                     pass
 
@@ -1708,7 +1709,34 @@ class ConfigTab(TabPane):
             else:
                 status_lbl.update("[dim]Chip nem azonosítható[/dim]")
 
-            # --- Parse GPIO assignments ---------------------------------
+            # --- Parse Mem1 (board type, highest priority) ----------------
+            mem1_value = _parse_mem1(lines)
+            if mem1_value:
+                app.device_board_type = mem1_value
+
+            # Determine the one board name to set (Mem1 wins over module_type mapping)
+            from tasmota_manager.board_layouts import BOARD_BY_NAME
+            best_board: Optional[str] = None
+            if mem1_value and mem1_value in BOARD_BY_NAME:
+                best_board = mem1_value
+                filled.append(f"Board (Mem1): {mem1_value}")
+            elif _board_from_module:
+                best_board = _board_from_module
+                filled.append(f"Modul → {best_board}")
+            elif mem1_value:
+                filled.append(f"Board (Mem1, ismeretlen): {mem1_value}")
+
+            # Set cfg-module exactly ONCE so board-type-select only changes once.
+            if best_board:
+                try:
+                    sel: Select = self.query_one("#cfg-module", Select)
+                    sel.value = best_board
+                except Exception:
+                    pass
+
+            # --- Parse GPIO assignments (set AFTER cfg-module) ------------
+            # By setting GPIO here, _rebuild_board_diagram uses device data even
+            # when the deferred on_select_changed for cfg-module fires later.
             gpio_from_device = _parse_gpio_from_device(lines)
             if gpio_from_device:
                 self._gpio_assignments = gpio_from_device
@@ -1718,21 +1746,9 @@ class ConfigTab(TabPane):
                 )
                 filled.append(f"GPIO ({len(gpio_from_device)} pin): {summary}")
 
-            # --- Parse Mem1 (board type) → auto-select in cfg-module if known ---
-            mem1_value = _parse_mem1(lines)
-            if mem1_value:
-                app.device_board_type = mem1_value
-                from tasmota_manager.board_layouts import BOARD_BY_NAME
-                if mem1_value in BOARD_BY_NAME:
-                    try:
-                        self._suppress_module_defaults = True
-                        self.query_one("#cfg-module", Select).value = mem1_value
-                        self.call_after_refresh(self._clear_suppress_flag)
-                        filled.append(f"Board (Mem1): {mem1_value}")
-                    except Exception:
-                        self._suppress_module_defaults = False
-                else:
-                    filled.append(f"Board (Mem1, ismeretlen): {mem1_value}")
+            # Release suppression after the next DOM refresh so all Changed
+            # events queued above are still processed with the flag active.
+            self.call_after_refresh(self._clear_suppress_flag)
 
             # --- Summary notification ----------------------------------
             filled_str = ", ".join(filled) if filled else "–"
