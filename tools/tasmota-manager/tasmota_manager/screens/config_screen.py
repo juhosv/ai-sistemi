@@ -461,14 +461,14 @@ class ConfigTab(TabPane):
             with Horizontal(id="config-group-row"):
                 yield Label("User:", classes="cfg-row-label")
                 yield Select(
-                    options=[],
+                    options=self._user_options_top(),
                     id="cfg-user-select",
                     allow_blank=True,
                     prompt="– válassz usert –",
                 )
                 yield Label("Régió:", classes="cfg-row-label")
                 yield Select(
-                    options=self._region_options(),
+                    options=[],
                     id="cfg-region-select",
                     allow_blank=True,
                     prompt="– válassz régiót –",
@@ -479,38 +479,44 @@ class ConfigTab(TabPane):
             with Vertical(id="cfg-groups-editor", classes="hidden"):
                 yield Static("Csoportok kezelése", classes="section-title")
                 with Horizontal(id="cfg-groups-editor-inner"):
-                    # Left: user management
+                    # Left: user management (primary / top-level)
                     with Vertical(id="cfg-groups-user-col"):
                         yield Static("Userek", classes="subsection-title")
                         yield Select(
-                            options=[],
+                            options=self._user_options_top(),
                             id="cfg-edit-user-select",
                             allow_blank=True,
                             prompt="– válassz usert –",
                         )
                         with Horizontal(classes="row"):
-                            yield Input(placeholder="User azonosító (pl. juhosv)", id="cfg-new-user-id")
-                            yield Input(placeholder="Megjelenítendő név", id="cfg-new-user-name")
-                            yield Button("+ Hozzáad", id="cfg-add-user-btn", variant="success")
+                            yield Label("Azonosító:", classes="label")
+                            yield Input(placeholder="pl. juhosv", id="cfg-new-user-id")
                         with Horizontal(classes="row"):
-                            yield Button("🗑 User törlése", id="cfg-del-user-btn", variant="error")
-                            yield Button("✦ Új user", id="cfg-new-user-btn", variant="default")
-                    # Right: region management
+                            yield Label("Név:", classes="label")
+                            yield Input(placeholder="Megjelenítendő név", id="cfg-new-user-name")
+                        with Horizontal(classes="row"):
+                            yield Button("+ Új", id="cfg-new-user-btn", variant="default")
+                            yield Button("💾 Mentés", id="cfg-add-user-btn", variant="success")
+                            yield Button("🗑 Törlés", id="cfg-del-user-btn", variant="error")
+                    # Right: region management (secondary / per-user)
                     with Vertical(id="cfg-groups-region-col"):
                         yield Static("Régiók (kiválasztott userhez)", classes="subsection-title")
                         yield Select(
-                            options=self._region_options(),
+                            options=[],
                             id="cfg-edit-region-select",
                             allow_blank=True,
                             prompt="– válassz régiót –",
                         )
                         with Horizontal(classes="row"):
-                            yield Input(placeholder="Régió azonosító (pl. hu_eszak)", id="cfg-new-region-id")
-                            yield Input(placeholder="Megjelenítendő név", id="cfg-new-region-name")
-                            yield Button("+ Hozzáad", id="cfg-add-region-btn", variant="success")
+                            yield Label("Azonosító:", classes="label")
+                            yield Input(placeholder="pl. hu_eszak", id="cfg-new-region-id")
                         with Horizontal(classes="row"):
-                            yield Button("🗑 Régió törlése", id="cfg-del-region-btn", variant="error")
-                            yield Button("✦ Új régió", id="cfg-new-region-btn", variant="default")
+                            yield Label("Név:", classes="label")
+                            yield Input(placeholder="Megjelenítendő név", id="cfg-new-region-name")
+                        with Horizontal(classes="row"):
+                            yield Button("+ Új", id="cfg-new-region-btn", variant="default")
+                            yield Button("💾 Mentés", id="cfg-add-region-btn", variant="success")
+                            yield Button("🗑 Törlés", id="cfg-del-region-btn", variant="error")
 
             # --- Device fetch row ---------------------------------------
             with Horizontal(id="config-fetch-row"):
@@ -754,26 +760,33 @@ class ConfigTab(TabPane):
         # --- Group editor buttons ---
         elif bid == "cfg-groups-edit-btn":
             self._toggle_groups_editor()
-        elif bid == "cfg-add-region-btn":
-            self._add_region()
-        elif bid == "cfg-del-region-btn":
-            self._delete_region()
         elif bid == "cfg-add-user-btn":
-            self._add_user()
+            self._save_user()
         elif bid == "cfg-del-user-btn":
             self._delete_user()
-        elif bid == "cfg-new-region-btn":
-            self._clear_region_fields()
-            try:
-                self.query_one("#cfg-edit-region-select", Select).value = Select.BLANK
-            except Exception:
-                pass
         elif bid == "cfg-new-user-btn":
-            self._clear_user_fields()
+            # Clear selection + fields → next "Mentés" will add a new user
             try:
                 self.query_one("#cfg-edit-user-select", Select).value = Select.BLANK
             except Exception:
                 pass
+            self.query_one("#cfg-new-user-id", Input).value = ""
+            self.query_one("#cfg-new-user-name", Input).value = ""
+            self.query_one("#cfg-edit-region-select", Select).set_options([])
+            self.query_one("#cfg-new-region-id", Input).value = ""
+            self.query_one("#cfg-new-region-name", Input).value = ""
+        elif bid == "cfg-add-region-btn":
+            self._save_region()
+        elif bid == "cfg-del-region-btn":
+            self._delete_region()
+        elif bid == "cfg-new-region-btn":
+            # Clear region selection + fields → next "Mentés" will add a new region
+            try:
+                self.query_one("#cfg-edit-region-select", Select).value = Select.BLANK
+            except Exception:
+                pass
+            self.query_one("#cfg-new-region-id", Input).value = ""
+            self.query_one("#cfg-new-region-name", Input).value = ""
 
     def on_select_changed(self, event: Select.Changed) -> None:
         sid = event.select.id or ""
@@ -783,48 +796,50 @@ class ConfigTab(TabPane):
             self._update_preview()
         elif sid == "gpio-func-select":
             self._update_func_preview()
-        elif sid == "cfg-region-select":
-            self._on_region_changed(event.value)
-            self._update_fulltopic_from_group()
-            try:
-                self.app.sync_mqtt_to_monitor(topic_only=True)  # type: ignore[attr-defined]
-            except Exception:
-                pass
         elif sid == "cfg-user-select":
+            self._on_main_user_changed(event.value)
             self._update_fulltopic_from_group()
             try:
                 self.app.sync_mqtt_to_monitor(topic_only=True)  # type: ignore[attr-defined]
             except Exception:
                 pass
-        elif sid == "cfg-edit-region-select":
-            self._on_edit_region_changed(event.value)
+        elif sid == "cfg-region-select":
+            self._update_fulltopic_from_group()
+            try:
+                self.app.sync_mqtt_to_monitor(topic_only=True)  # type: ignore[attr-defined]
+            except Exception:
+                pass
         elif sid == "cfg-edit-user-select":
-            region_sel: Select = self.query_one("#cfg-edit-region-select")
-            rid = region_sel.value
-            region_id = rid if isinstance(rid, str) else ""
-            self._on_edit_user_changed(event.value, region_id)
+            self._on_edit_user_changed(event.value)
+        elif sid == "cfg-edit-region-select":
+            user_sel: Select = self.query_one("#cfg-edit-user-select")
+            uid = user_sel.value
+            user_id = uid if isinstance(uid, str) else ""
+            self._on_edit_region_changed(event.value, user_id)
 
     def on_input_changed(self, event: Input.Changed) -> None:
         self._update_preview()
         if event.input.id == "cfg-mqtt-topic":
             try:
-                region_sel: Select = self.query_one("#cfg-region-select")
                 user_sel: Select = self.query_one("#cfg-user-select")
-                rid = region_sel.value if isinstance(region_sel.value, str) else ""
+                region_sel: Select = self.query_one("#cfg-region-select")
                 uid = user_sel.value if isinstance(user_sel.value, str) else ""
+                rid = region_sel.value if isinstance(region_sel.value, str) else ""
                 self._update_fulltopic_preview(rid, uid)
             except Exception:
                 pass
 
     # ------------------------------------------------------------------
-    # Group (region/user) management helpers
+    # Group (user/region) management helpers
     # ------------------------------------------------------------------
 
-    def _region_options(self) -> list[tuple[str, str]]:
-        return [(name, rid) for rid, name in list_regions()]
+    def _user_options_top(self) -> list[tuple[str, str]]:
+        """Options for the top-level user dropdowns."""
+        return [(name, uid) for uid, name in list_users()]
 
-    def _user_options(self, region_id: str) -> list[tuple[str, str]]:
-        return [(name, uid) for uid, name in list_users(region_id)]
+    def _region_options_for_user(self, user_id: str) -> list[tuple[str, str]]:
+        """Options for the region dropdown of a specific user."""
+        return [(name, rid) for rid, name in list_regions(user_id)]
 
     def _toggle_groups_editor(self) -> None:
         editor = self.query_one("#cfg-groups-editor")
@@ -836,61 +851,45 @@ class ConfigTab(TabPane):
         else:
             btn.label = "✕ Bezárás"
             btn.variant = "warning"
-            self._refresh_editor_region_select()
+            self._refresh_editor_user_select()
 
-    def _on_region_changed(self, region_id) -> None:
-        """Update user dropdown when region selection changes."""
-        if region_id is None or region_id is Select.BLANK or not isinstance(region_id, str):
-            self.query_one("#cfg-user-select", Select).set_options([])
+    def _on_main_user_changed(self, user_id) -> None:
+        """Update region dropdown in the main row when user selection changes."""
+        if user_id is None or user_id is Select.BLANK or not isinstance(user_id, str):
+            self.query_one("#cfg-region-select", Select).set_options([])
             return
-        self.query_one("#cfg-user-select", Select).set_options(self._user_options(region_id))
+        self.query_one("#cfg-region-select", Select).set_options(
+            self._region_options_for_user(user_id)
+        )
 
-    def _on_edit_region_changed(self, region_id) -> None:
-        """Update user dropdown in the editor panel and fill edit fields."""
-        if region_id is None or region_id is Select.BLANK or not isinstance(region_id, str):
-            self.query_one("#cfg-edit-user-select", Select).set_options([])
-            self.query_one("#cfg-new-region-id", Input).value = ""
-            self.query_one("#cfg-new-region-name", Input).value = ""
-            self._set_region_btn_mode("add")
-            return
-        # Fill inputs with selected region's data
-        self.query_one("#cfg-new-region-id", Input).value = region_id
-        self.query_one("#cfg-new-region-name", Input).value = get_region_name(region_id)
-        self._set_region_btn_mode("edit")
-        self.query_one("#cfg-edit-user-select", Select).set_options(self._user_options(region_id))
-        # Reset user fields when region changes
-        self.query_one("#cfg-new-user-id", Input).value = ""
-        self.query_one("#cfg-new-user-name", Input).value = ""
-        self._set_user_btn_mode("add")
-
-    def _on_edit_user_changed(self, user_id, region_id: str) -> None:
-        """Fill user edit fields when a user is selected."""
+    def _on_edit_user_changed(self, user_id) -> None:
+        """Fill user edit fields and refresh region list when a user is selected in the editor."""
         if user_id is None or user_id is Select.BLANK or not isinstance(user_id, str):
             self.query_one("#cfg-new-user-id", Input).value = ""
             self.query_one("#cfg-new-user-name", Input).value = ""
-            self._set_user_btn_mode("add")
+            # Disable region column
+            self.query_one("#cfg-edit-region-select", Select).set_options([])
+            self.query_one("#cfg-new-region-id", Input).value = ""
+            self.query_one("#cfg-new-region-name", Input).value = ""
             return
         self.query_one("#cfg-new-user-id", Input).value = user_id
-        self.query_one("#cfg-new-user-name", Input).value = get_user_name(region_id, user_id)
-        self._set_user_btn_mode("edit")
+        self.query_one("#cfg-new-user-name", Input).value = get_user_name(user_id)
+        # Populate region dropdown for this user
+        self.query_one("#cfg-edit-region-select", Select).set_options(
+            self._region_options_for_user(user_id)
+        )
+        self.query_one("#cfg-edit-region-select", Select).value = Select.BLANK
+        self.query_one("#cfg-new-region-id", Input).value = ""
+        self.query_one("#cfg-new-region-name", Input).value = ""
 
-    def _set_region_btn_mode(self, mode: str) -> None:
-        btn: Button = self.query_one("#cfg-add-region-btn")
-        if mode == "edit":
-            btn.label = "💾 Mentés"
-            btn.variant = "primary"
-        else:
-            btn.label = "+ Hozzáad"
-            btn.variant = "success"
-
-    def _set_user_btn_mode(self, mode: str) -> None:
-        btn: Button = self.query_one("#cfg-add-user-btn")
-        if mode == "edit":
-            btn.label = "💾 Mentés"
-            btn.variant = "primary"
-        else:
-            btn.label = "+ Hozzáad"
-            btn.variant = "success"
+    def _on_edit_region_changed(self, region_id, user_id: str) -> None:
+        """Fill region edit fields when a region is selected in the editor."""
+        if region_id is None or region_id is Select.BLANK or not isinstance(region_id, str):
+            self.query_one("#cfg-new-region-id", Input).value = ""
+            self.query_one("#cfg-new-region-name", Input).value = ""
+            return
+        self.query_one("#cfg-new-region-id", Input).value = region_id
+        self.query_one("#cfg-new-region-name", Input).value = get_region_name(user_id, region_id)
 
     def _apply_fulltopic_to_group_selects(self, full_topic: str) -> None:
         """Parse FullTopic and set user/region dropdowns if values are recognised.
@@ -899,68 +898,62 @@ class ConfigTab(TabPane):
         Ignores default Tasmota format: %prefix%/%topic%/
         """
         import re as _re
-        # Match: something/something/%topic%/%prefix%/ (our format)
         m = _re.match(r'^([^%/]+)/([^%/]+)/%topic%/%prefix%/', full_topic)
         if not m:
             return
         user_id = m.group(1)
         region_id = m.group(2)
-        # Check if region exists in groups.json
-        known_regions = [rid for rid, _ in list_regions()]
-        if region_id not in known_regions:
+        # Check if user exists as a top-level entry
+        known_users = [uid for uid, _ in list_users()]
+        if user_id not in known_users:
             self.notify(
-                f"FullTopic-ban talált régió ({region_id}) nem szerepel a csoportokban.",
+                f"FullTopic-ban talált user ({user_id}) nem szerepel a csoportokban.",
                 severity="warning",
                 timeout=6,
             )
             return
-        # Set region dropdown (this triggers on_select_changed → _on_region_changed
-        # which populates user options; we must set user value AFTER that refresh)
+        # Set user dropdown and populate region options for that user
         try:
-            region_sel: Select = self.query_one("#cfg-region-select")
-            region_sel.value = region_id
-            # Explicitly populate user options now (in case event fires async)
-            self.query_one("#cfg-user-select", Select).set_options(
-                self._user_options(region_id)
+            user_sel: Select = self.query_one("#cfg-user-select")
+            user_sel.value = user_id
+            self.query_one("#cfg-region-select", Select).set_options(
+                self._region_options_for_user(user_id)
             )
         except Exception:
             return
-        # Check if user exists in the region
-        known_users = [uid for uid, _ in list_users(region_id)]
-        if user_id not in known_users:
+        # Check if region exists under this user
+        known_regions = [rid for rid, _ in list_regions(user_id)]
+        if region_id not in known_regions:
             self.notify(
-                f"FullTopic-ban talált user ({user_id}) nem szerepel a(z) {region_id} régióban.",
+                f"FullTopic-ban talált régió ({region_id}) nem szerepel {user_id} useréhez.",
                 severity="warning",
                 timeout=6,
             )
             return
 
-        # Defer user value + FullTopic correction via a short timer so that
-        # set_options() reactive update fully completes before we set the value.
-        # call_after_refresh is too early on first load; 150 ms is reliable.
-        def _apply_user() -> None:
+        # Defer region value via timer so set_options() completes first
+        def _apply_region() -> None:
             try:
-                self.query_one("#cfg-user-select", Select).value = user_id
-                # Re-apply the correct FullTopic (region change may have reset it)
+                self.query_one("#cfg-region-select", Select).value = region_id
                 self._update_fulltopic_from_group()
             except Exception:
                 pass
 
-        self.set_timer(0.15, _apply_user)
+        self.set_timer(0.15, _apply_region)
         self.notify(
-            f"Régió és user beállítva: {region_id} / {user_id}",
+            f"User és régió beállítva: {user_id} / {region_id}",
             severity="information",
             timeout=4,
         )
 
     def _update_fulltopic_from_group(self) -> None:
-        """Rebuild the FullTopic input and preview when region/user/topic changes."""
-        region_sel: Select = self.query_one("#cfg-region-select")
+        """Rebuild the FullTopic input and preview when user/region/topic changes."""
         user_sel: Select = self.query_one("#cfg-user-select")
-        region_id = region_sel.value
+        region_sel: Select = self.query_one("#cfg-region-select")
         user_id = user_sel.value
-        rid = region_id if isinstance(region_id, str) and region_id else ""
+        region_id = region_sel.value
         uid = user_id if isinstance(user_id, str) and user_id else ""
+        rid = region_id if isinstance(region_id, str) and region_id else ""
         new_fulltopic = build_fulltopic(rid, uid)
         self.query_one("#cfg-mqtt-fulltopic", Input).value = new_fulltopic
         self._update_fulltopic_preview(rid, uid)
@@ -978,66 +971,24 @@ class ConfigTab(TabPane):
             pass
 
     def _refresh_group_selects(self) -> None:
-        """Reload region options in both the main row and the editor."""
-        opts = self._region_options()
-        self.query_one("#cfg-region-select", Select).set_options(opts)
-        self._refresh_editor_region_select()
-
-    def _refresh_editor_region_select(self) -> None:
-        opts = self._region_options()
+        """Reload user options in both the main row and the editor."""
+        user_opts = self._user_options_top()
         try:
-            self.query_one("#cfg-edit-region-select", Select).set_options(opts)
+            self.query_one("#cfg-user-select", Select).set_options(user_opts)
+        except Exception:
+            pass
+        self._refresh_editor_user_select()
+
+    def _refresh_editor_user_select(self) -> None:
+        """Reload the user dropdown in the editor panel."""
+        user_opts = self._user_options_top()
+        try:
+            self.query_one("#cfg-edit-user-select", Select).set_options(user_opts)
         except Exception:
             pass
 
-    def _add_region(self) -> None:
-        new_id = self.query_one("#cfg-new-region-id", Input).value.strip()
-        new_name = self.query_one("#cfg-new-region-name", Input).value.strip()
-        if not new_id:
-            self.notify("Add meg a régió azonosítóját!", severity="warning")
-            return
-        sel: Select = self.query_one("#cfg-edit-region-select")
-        selected_id = sel.value if isinstance(sel.value, str) else ""
-        if selected_id:
-            # Edit mode – update existing region
-            if update_region(selected_id, new_id, new_name):
-                self._clear_region_fields()
-                self._refresh_group_selects()
-                self.notify(f"Régió módosítva: {new_id}", severity="information")
-            else:
-                self.notify("Hiba: az azonosító már foglalt!", severity="error")
-        else:
-            # Add mode – create new region
-            if add_region(new_id, new_name):
-                self._clear_region_fields()
-                self._refresh_group_selects()
-                self.notify(f"Régió hozzáadva: {new_id}", severity="information")
-            else:
-                self.notify(f"Ez a régió már létezik: {new_id}", severity="warning")
-
-    def _clear_region_fields(self) -> None:
-        self.query_one("#cfg-new-region-id", Input).value = ""
-        self.query_one("#cfg-new-region-name", Input).value = ""
-        self._set_region_btn_mode("add")
-
-    def _delete_region(self) -> None:
-        sel: Select = self.query_one("#cfg-edit-region-select")
-        rid = sel.value
-        if not isinstance(rid, str) or not rid:
-            self.notify("Válassz régiót a törléshez!", severity="warning")
-            return
-        if delete_region(rid):
-            self._refresh_group_selects()
-            self.notify(f"Régió törölve: {rid}", severity="information")
-        else:
-            self.notify("A régió nem található!", severity="error")
-
-    def _add_user(self) -> None:
-        region_sel: Select = self.query_one("#cfg-edit-region-select")
-        rid = region_sel.value
-        if not isinstance(rid, str) or not rid:
-            self.notify("Először válassz régiót!", severity="warning")
-            return
+    def _save_user(self) -> None:
+        """Save (add or update) a user from the editor fields."""
         new_uid = self.query_one("#cfg-new-user-id", Input).value.strip()
         new_uname = self.query_one("#cfg-new-user-name", Input).value.strip()
         if not new_uid:
@@ -1047,42 +998,108 @@ class ConfigTab(TabPane):
         selected_uid = user_sel.value if isinstance(user_sel.value, str) else ""
         if selected_uid:
             # Edit mode – update existing user
-            if update_user(rid, selected_uid, new_uid, new_uname):
-                self._clear_user_fields()
-                self.query_one("#cfg-edit-user-select", Select).set_options(self._user_options(rid))
+            if update_user(selected_uid, new_uid, new_uname):
+                self._refresh_group_selects()
+                # Re-select the updated user
+                def _reselect():
+                    try:
+                        self.query_one("#cfg-edit-user-select", Select).value = new_uid
+                    except Exception:
+                        pass
+                self.set_timer(0.1, _reselect)
                 self.notify(f"User módosítva: {new_uid}", severity="information")
             else:
                 self.notify("Hiba: az azonosító már foglalt!", severity="error")
         else:
             # Add mode – create new user
-            if add_user(rid, new_uid, new_uname):
-                self._clear_user_fields()
-                self.query_one("#cfg-edit-user-select", Select).set_options(self._user_options(rid))
+            if add_user(new_uid, new_uname):
+                self._refresh_group_selects()
+                self.query_one("#cfg-new-user-id", Input).value = ""
+                self.query_one("#cfg-new-user-name", Input).value = ""
                 self.notify(f"User hozzáadva: {new_uid}", severity="information")
             else:
                 self.notify(f"Ez a user már létezik: {new_uid}", severity="warning")
 
-    def _clear_user_fields(self) -> None:
-        self.query_one("#cfg-new-user-id", Input).value = ""
-        self.query_one("#cfg-new-user-name", Input).value = ""
-        self._set_user_btn_mode("add")
-
     def _delete_user(self) -> None:
-        region_sel: Select = self.query_one("#cfg-edit-region-select")
-        rid = region_sel.value
         user_sel: Select = self.query_one("#cfg-edit-user-select")
         uid = user_sel.value
-        if not isinstance(rid, str) or not rid:
-            self.notify("Válassz régiót!", severity="warning")
-            return
         if not isinstance(uid, str) or not uid:
             self.notify("Válassz usert a törléshez!", severity="warning")
             return
-        if delete_user(rid, uid):
-            self._on_edit_region_changed(rid)
-            self.notify(f"User törölve: {uid}", severity="information")
+        if delete_user(uid):
+            self._refresh_group_selects()
+            self.query_one("#cfg-edit-user-select", Select).value = Select.BLANK
+            self.query_one("#cfg-new-user-id", Input).value = ""
+            self.query_one("#cfg-new-user-name", Input).value = ""
+            self.query_one("#cfg-edit-region-select", Select).set_options([])
+            self.query_one("#cfg-new-region-id", Input).value = ""
+            self.query_one("#cfg-new-region-name", Input).value = ""
+            self.notify(f"User törölve: {uid} (összes régiójával együtt)", severity="information")
         else:
             self.notify("A user nem található!", severity="error")
+
+    def _save_region(self) -> None:
+        """Save (add or update) a region for the currently selected user."""
+        user_sel: Select = self.query_one("#cfg-edit-user-select")
+        uid = user_sel.value
+        if not isinstance(uid, str) or not uid:
+            self.notify("Először válassz usert!", severity="warning")
+            return
+        new_rid = self.query_one("#cfg-new-region-id", Input).value.strip()
+        new_rname = self.query_one("#cfg-new-region-name", Input).value.strip()
+        if not new_rid:
+            self.notify("Add meg a régió azonosítóját!", severity="warning")
+            return
+        region_sel: Select = self.query_one("#cfg-edit-region-select")
+        selected_rid = region_sel.value if isinstance(region_sel.value, str) else ""
+        if selected_rid:
+            # Edit mode – update existing region
+            if update_region(uid, selected_rid, new_rid, new_rname):
+                self.query_one("#cfg-edit-region-select", Select).set_options(
+                    self._region_options_for_user(uid)
+                )
+                def _reselect_region():
+                    try:
+                        self.query_one("#cfg-edit-region-select", Select).value = new_rid
+                    except Exception:
+                        pass
+                self.set_timer(0.1, _reselect_region)
+                self.notify(f"Régió módosítva: {new_rid}", severity="information")
+            else:
+                self.notify("Hiba: az azonosító már foglalt!", severity="error")
+        else:
+            # Add mode – create new region under selected user
+            if add_region(uid, new_rid, new_rname):
+                self.query_one("#cfg-edit-region-select", Select).set_options(
+                    self._region_options_for_user(uid)
+                )
+                self.query_one("#cfg-new-region-id", Input).value = ""
+                self.query_one("#cfg-new-region-name", Input).value = ""
+                self.notify(f"Régió hozzáadva: {new_rid} ({uid})", severity="information")
+            else:
+                self.notify(f"Ez a régió már létezik: {new_rid}", severity="warning")
+
+    def _delete_region(self) -> None:
+        user_sel: Select = self.query_one("#cfg-edit-user-select")
+        uid = user_sel.value
+        region_sel: Select = self.query_one("#cfg-edit-region-select")
+        rid = region_sel.value
+        if not isinstance(uid, str) or not uid:
+            self.notify("Válassz usert!", severity="warning")
+            return
+        if not isinstance(rid, str) or not rid:
+            self.notify("Válassz régiót a törléshez!", severity="warning")
+            return
+        if delete_region(uid, rid):
+            self.query_one("#cfg-edit-region-select", Select).set_options(
+                self._region_options_for_user(uid)
+            )
+            self.query_one("#cfg-edit-region-select", Select).value = Select.BLANK
+            self.query_one("#cfg-new-region-id", Input).value = ""
+            self.query_one("#cfg-new-region-name", Input).value = ""
+            self.notify(f"Régió törölve: {rid}", severity="information")
+        else:
+            self.notify("A régió nem található!", severity="error")
 
     # ------------------------------------------------------------------
     # GPIO management – interactive board diagram
@@ -1424,10 +1441,10 @@ class ConfigTab(TabPane):
             self.query_one("#cfg-module", Select).value = D1_MINI.name
         except Exception:
             pass
-        # Reset region/user selects
+        # Reset user/region selects
         try:
-            self.query_one("#cfg-region-select", Select).value = Select.BLANK
-            self.query_one("#cfg-user-select", Select).set_options([])
+            self.query_one("#cfg-user-select", Select).value = Select.BLANK
+            self.query_one("#cfg-region-select", Select).set_options([])
         except Exception:
             pass
         # Reset GPIO assignments and diagram
@@ -1514,15 +1531,15 @@ class ConfigTab(TabPane):
         except Exception:
             pass
 
-        # Region / User dropdowns
-        if cfg.region_id:
+        # User / Region dropdowns (user-first)
+        if cfg.user_id:
             try:
-                region_sel: Select = self.query_one("#cfg-region-select")
-                region_sel.value = cfg.region_id
-                # Populate user dropdown for this region
-                self._on_region_changed(cfg.region_id)
-                if cfg.user_id:
-                    self.query_one("#cfg-user-select", Select).value = cfg.user_id
+                user_sel: Select = self.query_one("#cfg-user-select")
+                user_sel.value = cfg.user_id
+                # Populate region dropdown for this user
+                self._on_main_user_changed(cfg.user_id)
+                if cfg.region_id:
+                    self.query_one("#cfg-region-select", Select).value = cfg.region_id
             except Exception:
                 pass
 
