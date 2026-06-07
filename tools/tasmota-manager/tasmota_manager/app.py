@@ -168,7 +168,7 @@ class TasmoApp(App):
             from tasmota_manager.groups_manager import build_mqtt_subscribe_topic
             mqtt_tab: MQTTTab = self.query_one(MQTTTab)
             topic = self.query_one("#cfg-mqtt-topic", Input).value.strip()
-            # Read region/user from Config tab dropdowns
+            # Read user/region from Config tab dropdowns
             region_id = ""
             user_id = ""
             try:

@@ -195,15 +195,20 @@ cmnd/tasmotas/POWER  →  OFF   (összes Tasmota eszköz kikapcsol)
 
 ## FullTopic testreszabás
 
-Ha az architektúra megkívánja, a topic sorrend megfordítható a Tasmota konzolból:
+A SmartBlue projekt csoportos topic hierarchiát alkalmaz, ahol a FullTopic tartalmazza a user és régió azonosítókat:
 
 | Formátum | Példa |
 |---------|-------|
-| Alapértelmezett: `%prefix%/%topic%/` | `cmnd/A1B2C3/POWER` |
-| Megfordított: `%topic%/%prefix%/` | `A1B2C3/cmnd/POWER` |
+| Alapértelmezett Tasmota: `%prefix%/%topic%/` | `cmnd/A1B2C3/POWER` |
+| SmartBlue csoportos: `{user}/{region}/%topic%/%prefix%/` | `juhosv/hu_eszak/A1B2C3/cmnd/POWER` |
 
-> **Projekt döntés szükséges:** Alapértelmezett Tasmota struktúrát tartjuk-e, vagy megfordítjuk?  
-> Javaslat: **alapértelmezett megtartása** – egyszerűbb wildcard feliratkozás, jobb Tasmota kompatibilitás.
+**Topic hierarchia sorrend:** `user_id / region_id / %topic% / %prefix%`
+
+- Az eszközre küldött FullTopic beállítás: `juhosv/hu_eszak/%topic%/%prefix%/`
+- MQTT feliratkozás egy eszközre: `juhosv/hu_eszak/A1B2C3/#`
+- MQTT feliratkozás egy user összes eszközére: `juhosv/hu_eszak/#`
+
+> **Sorrend indoklás:** A user_id kerül előre, mert az elsődleges szervezési szint a felhasználó; a régió másodlagos (földrajzi/szervezeti alcsoportok).
 
 ---
 
@@ -227,7 +232,7 @@ timestamp:     (az üzenetben lévő "Time" mező, vagy fogadás ideje)
 
 ## Döntések
 
-- [x] **FullTopic:** Alapértelmezett Tasmota sorrend marad: `cmnd/{topic}/...`
+- [x] **FullTopic:** SmartBlue csoportos hierarchia: `{user}/{region}/%topic%/%prefix%/` – pl. `juhosv/hu_eszak/A1B2C3/tele/SENSOR`
 - [x] **TelePeriod:** 300 másodperc (5 perc) – alapértelmezett, eszközönként felülírható
 - [x] **Eszköz `%topic%` neve:** MAC-alapú, **firmware-előtag nélkül** – csak a 6 hex karakteres MAC-suffix (pl. `A1B2C3`)
   - Tasmota alapértelmezettje `tasmota_A1B2C3` – ezt felül kell írni provisioning során: `Topic A1B2C3`

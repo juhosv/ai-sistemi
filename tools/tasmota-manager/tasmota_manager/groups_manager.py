@@ -1,7 +1,7 @@
 """Region/user group management for MQTT topic hierarchy.
 
-Topic format (B variant): {region_id}/{user_id}/%prefix%/%topic%/
-Example: hu_eszak/juhosv/tele/proba_123/SENSOR
+Topic format: {user_id}/{region_id}/%topic%/%prefix%/
+Example: juhosv/hu_eszak/proba_123/tele/SENSOR
 """
 from __future__ import annotations
 
@@ -184,25 +184,25 @@ def delete_user(region_id: str, user_id: str) -> bool:
 def build_fulltopic(region_id: str, user_id: str) -> str:
     """Build Tasmota FullTopic string.
 
-    Format: {region_id}/{user_id}/%topic%/%prefix%/
-    Example: hu_eszak/juhosv/%topic%/%prefix%/
+    Format: {user_id}/{region_id}/%topic%/%prefix%/
+    Example: juhosv/hu_eszak/%topic%/%prefix%/
 
     Results in topics like:
-        hu_eszak/juhosv/AABBCCDD/tele/SENSOR
-        hu_eszak/juhosv/AABBCCDD/cmnd/Power
+        juhosv/hu_eszak/AABBCCDD/tele/SENSOR
+        juhosv/hu_eszak/AABBCCDD/cmnd/Power
 
     This way subscribing to all messages from one device is simply:
-        hu_eszak/juhosv/AABBCCDD/#
+        juhosv/hu_eszak/AABBCCDD/#
     """
     if not region_id or not user_id:
         return "%prefix%/%topic%/"
-    return f"{region_id}/{user_id}/%topic%/%prefix%/"
+    return f"{user_id}/{region_id}/%topic%/%prefix%/"
 
 
 def build_mqtt_subscribe_topic(region_id: str, user_id: str, device_topic: str) -> str:
     """Build the MQTT subscription wildcard for a specific device.
 
-    With group:    hu_eszak/juhosv/AABBCCDD/#
+    With group:    juhosv/hu_eszak/AABBCCDD/#
     Without group: +/AABBCCDD/#  (legacy flat topic)
     """
     if not region_id or not user_id:
@@ -210,5 +210,5 @@ def build_mqtt_subscribe_topic(region_id: str, user_id: str, device_topic: str) 
             return f"+/{device_topic}/#"
         return "#"
     if device_topic:
-        return f"{region_id}/{user_id}/{device_topic}/#"
-    return f"{region_id}/{user_id}/#"
+        return f"{user_id}/{region_id}/{device_topic}/#"
+    return f"{user_id}/{region_id}/#"

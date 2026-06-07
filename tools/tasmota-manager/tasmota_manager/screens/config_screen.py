@@ -75,9 +75,9 @@ def parse_fulltopic_from_mqt_lines(lines: list[str], device_topic: str) -> Optio
 
     Tasmota 15 does not include FullTopic in StatusPRM, but the device logs
     every MQTT publish like:
-        MQT: demo_region/demo_user/proba_123/stat/STATUS = {...}
+        MQT: demo_user/demo_region/proba_123/stat/STATUS = {...}
 
-    From this we reconstruct: demo_region/demo_user/%topic%/%prefix%/
+    From this we reconstruct: demo_user/demo_region/%topic%/%prefix%/
     """
     if not device_topic:
         return None
@@ -98,12 +98,12 @@ def parse_fulltopic_from_mqt_lines(lines: list[str], device_topic: str) -> Optio
             pos = mqtt_topic.find(marker)
             if pos < 0:
                 continue
-            path_before_prefix = mqtt_topic[:pos]  # e.g. demo_region/demo_user/proba_123
+            path_before_prefix = mqtt_topic[:pos]  # e.g. demo_user/demo_region/proba_123
             # Remove device_topic suffix
             suffix = f"/{device_topic}"
             if path_before_prefix.endswith(suffix):
                 group_path = path_before_prefix[: -len(suffix)]
-                # group_path = "demo_region/demo_user"
+                # group_path = "demo_user/demo_region"
                 return f"{group_path}/%topic%/%prefix%/"
             # Maybe no group prefix (default format): device_topic/prefix/...
             if path_before_prefix == device_topic:
@@ -457,21 +457,21 @@ class ConfigTab(TabPane):
                 yield Input(placeholder="Profil neve", id="cfg-profile-name-input", value="uj_profil")
                 yield Button("↺ Reset", id="cfg-reset-btn", variant="error")
 
-            # --- Group row (Régió / User) --------------------------------
+            # --- Group row (User / Régió) --------------------------------
             with Horizontal(id="config-group-row"):
-                yield Label("Régió:", classes="cfg-row-label")
-                yield Select(
-                    options=self._region_options(),
-                    id="cfg-region-select",
-                    allow_blank=True,
-                    prompt="– válassz régiót –",
-                )
                 yield Label("User:", classes="cfg-row-label")
                 yield Select(
                     options=[],
                     id="cfg-user-select",
                     allow_blank=True,
                     prompt="– válassz usert –",
+                )
+                yield Label("Régió:", classes="cfg-row-label")
+                yield Select(
+                    options=self._region_options(),
+                    id="cfg-region-select",
+                    allow_blank=True,
+                    prompt="– válassz régiót –",
                 )
                 yield Button("⚙ Szerkesztés", id="cfg-groups-edit-btn", variant="default")
 
@@ -887,9 +887,9 @@ class ConfigTab(TabPane):
             btn.variant = "success"
 
     def _apply_fulltopic_to_group_selects(self, full_topic: str) -> None:
-        """Parse FullTopic and set region/user dropdowns if values are recognised.
+        """Parse FullTopic and set user/region dropdowns if values are recognised.
 
-        Supports format: {region}/{user}/%topic%/%prefix%/
+        Supports format: {user}/{region}/%topic%/%prefix%/
         Ignores default Tasmota format: %prefix%/%topic%/
         """
         import re as _re
@@ -897,8 +897,8 @@ class ConfigTab(TabPane):
         m = _re.match(r'^([^%/]+)/([^%/]+)/%topic%/%prefix%/', full_topic)
         if not m:
             return
-        region_id = m.group(1)
-        user_id = m.group(2)
+        user_id = m.group(1)
+        region_id = m.group(2)
         # Check if region exists in groups.json
         known_regions = [rid for rid, _ in list_regions()]
         if region_id not in known_regions:
@@ -964,7 +964,7 @@ class ConfigTab(TabPane):
         try:
             device_id = self.query_one("#cfg-mqtt-topic", Input).value.strip() or "AABBCCDD"
             if region_id and user_id:
-                example = f"[dim]Példa:[/dim] {region_id}/{user_id}/{device_id}/tele/SENSOR"
+                example = f"[dim]Példa:[/dim] {user_id}/{region_id}/{device_id}/tele/SENSOR"
             else:
                 example = f"[dim]Példa:[/dim] tele/{device_id}/SENSOR"
             self.query_one("#cfg-fulltopic-preview").update(example)
@@ -1584,7 +1584,7 @@ class ConfigTab(TabPane):
                 filled.append("Topic")
             # --- Try to infer FullTopic from MQT: log lines ---------------
             # Tasmota 15 does not include FullTopic in StatusPRM, but the
-            # device logs every MQTT publish (e.g. "MQT: region/user/topic/stat/STATUS")
+            # device logs every MQTT publish (e.g. "MQT: user/region/topic/stat/STATUS")
             device_topic_for_ft = s1.get("topic", "")
             inferred_fulltopic = parse_fulltopic_from_mqt_lines(lines, device_topic_for_ft)
             if inferred_fulltopic:
@@ -1594,8 +1594,8 @@ class ConfigTab(TabPane):
                 full_topic = s1["full_topic"]
                 self._set_input("#cfg-mqtt-fulltopic", full_topic)
                 filled.append("FullTopic")
-                # Try to extract region/user from the FullTopic
-                # Expected format: {region}/{user}/%topic%/%prefix%/
+                # Try to extract user/region from the FullTopic
+                # Expected format: {user}/{region}/%topic%/%prefix%/
                 self._apply_fulltopic_to_group_selects(full_topic)
             if s1.get("module_type") is not None:   # Module 0 is valid (falsy in Python!)
                 try:
