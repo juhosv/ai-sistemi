@@ -16,6 +16,16 @@ Az első pilot projektek **Szerbiában** kerülnek telepítésre.
 | **Zsolti (Sogi)** | Hardware tervezés és gyártás (Szerbiában él, helyi pilot felelős) |
 | **Bálint** | Szerver oldal: adatbázis és UI fejlesztés |
 
+### Külső közreműködők (potenciális)
+
+| Személy | Háttér | Szerep |
+|---------|--------|--------|
+| **Robi** | Riasztórendszerek szerelése | Helyszíni üzembe helyezés és üzemeltetés; saját szervere van |
+| **Alfréd** | Diák, kamera-rendszerek szerelése | Helyszíni üzembe helyezés és üzemeltetés |
+
+> Az első eszközöket várhatóan ők helyezik üzembe és üzemeltetik.  
+> Robinak van egy szervere – Bálint megvizsgálja, hogy alkalmas-e a SmartBlue stack-hez.
+
 ---
 
 ## Projekt jelenlegi fázisa
@@ -82,6 +92,22 @@ A szerver a következő fő feladatokat látja el:
 - **Teszt szerver:** Bálint beállított egy ingyenes MQTT bróker + email értesítő szervert
 - **Folyamat:** Sogi megkapja a Tasmota telepítési leírást + szerver MQTT beállításokat → D1 Mini csatlakozik → email értesítés megy
 - **Eszközök a teszt után:** Végleges ESP32-alapú hardver tervezése (Sogi feladata)
+
+---
+
+## Eszközfilozófia
+
+> **Nem nagyon általános, hanem sok különböző – de azonos alapokon.**
+
+Az eszközcsalád tagjai specifikus feladatokra optimalizált eszközök, nem univerzális platformok. Az egységes kommunikációs és firmware alap (ESP32 + Tasmota + MQTT) teszi lehetővé a könnyű bővítést és a közös szerver-oldali kezelést.
+
+---
+
+## Infrastruktúra tervek
+
+- **GitHub:** A projekt átkerül GitHub-ra – így Zsolti, Robi és Alfréd is könnyen hozzáfér a dokumentumokhoz és fájlokhoz
+- **Obsidian:** A dokumentáció Obsidian-ban szerkesztve, Git pluginnal szinkronizálva → szépen renderelt MD fájlok mindenki számára
+- **Projektmenedzsment:** Eszköz kiválasztása folyamatban (GitHub Projects, Linear, Notion stb.)
 
 ---
 

@@ -151,6 +151,39 @@ Sensor: OK
 
 → Részletek: [`hw-kijelzok.md`](hw-kijelzok.md)
 
+## Távolról paraméterezhető működés (SmartBlue integráció)
+
+> Megbeszélés alapján (2026-06-07): a helyszíni újrakonfigurálás elkerülése kulcsfontosságú.
+
+### Mit lehet távolról látni
+- Aktuális hőmérséklet (DS18B20 / BME280)
+- Aktuális ventilátor fordulatszám / PWM %
+- Üzemállapot (fut / leállt / hiba)
+- Riasztás: ha a hőmérséklet küszöb felett van, de a ventilátor nem fut
+
+### Mit lehet távolról beállítani
+A hőmérséklet–fordulatszám görbe paraméterei Tasmota `Mem` változókon keresztül tárolhatók és MQTT `cmnd` üzenetekkel frissíthetők:
+
+```
+cmnd/{topic}/Mem1  →  alsó küszöb (°C), pl. "30"
+cmnd/{topic}/Mem2  →  felső küszöb (°C), pl. "45"
+cmnd/{topic}/Mem3  →  minimális PWM %, pl. "20"
+```
+
+A Tasmota Rule ekkor ezeket olvassa:
+
+```
+Rule1
+  ON DS18B20#Temperature<%Mem1% DO PWM1 0 ENDON
+  ON DS18B20#Temperature>=%Mem1% DO PWM1 %Mem3% ENDON
+  ON DS18B20#Temperature>=%Mem2% DO PWM1 1023 ENDON
+Rule1 1
+```
+
+→ Így a helyszínre való utazás nélkül, távolról hangolható a szabályozás.
+
+---
+
 ## Opcionális: Ethernet (WiFi helyett)
 
 Fix telepítésű eszközöknél (kazánház, gépészeti szekrény, szerverrack) érdemes lehet:

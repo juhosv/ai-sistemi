@@ -71,13 +71,17 @@ EMQX auth:    Még nem döntött                                  [nyitott]
 
 - [x] **Helyszín felmérés** – beltéri, WiFi garantált
 - [x] **SIM kártya stratégia** – 1NCE IoT SIM kártyák (következő fázishoz)
-- [ ] **Eszközcsalád pontosítása** – hőmérséklet/páratartalom, relé, mozgásérzékelő ismert; további típusok nyitottak
+- [ ] **Eszközcsalád pontosítása** – hőmérséklet/páratartalom, relé, mozgásérzékelő ismert; ventilátor + gépmoniror új termékként szóba jött
 - [x] **Csapat technológiai ismerete** – Python/FastAPI stack kiválasztva
 - [ ] **MVP scope meghatározása** – mi kell az első pilot induláshoz minimálisan
 - [ ] **GDPR / adatvédelem** – szerbiai vs EU adattárolás jogi vizsgálata szükséges
 - [ ] **EMQX autentikáció** – eszköz azonosítási módszer kiválasztása
 - [ ] **Mobilalkalmazás döntés** – web UI, PWA vagy natív?
 - [ ] **Dashboard döntés** – Grafana, egyedi, vagy csak riasztás?
+- [ ] **GitHub migráció** – projekt repo létrehozása, Obsidian Git plugin, csapat hozzáférés (Sogi, Robi, Alfréd)
+- [ ] **Projektmenedzsment eszköz** – kiválasztás és beállítás
+- [ ] **Robi szervere** – Bálint megvizsgálja, megfelelő-e a SmartBlue stack-nek
+- [ ] **Fejlesztési ötletek gyűjtése** – Robi és Alfréd inputja a prioritásokhoz
 
 ## Teszt fázis – státusz
 
