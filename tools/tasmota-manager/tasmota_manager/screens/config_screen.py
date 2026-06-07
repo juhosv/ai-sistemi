@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Optional
 
 # GPIO parser and type resolver shared with the Board tab
-from tasmota_manager.screens.board_screen import _parse_gpio_from_device, _to_type
+from tasmota_manager.screens.board_screen import _parse_gpio_from_device, _parse_mem1, _to_type
 
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical, ScrollableContainer
@@ -594,6 +594,12 @@ class ConfigTab(TabPane):
                             value=D1_MINI.name,
                             id="cfg-module",
                             allow_blank=False,
+                        )
+                    with Horizontal(classes="row"):
+                        yield Label("Board típus (Mem1):", classes="label")
+                        yield Input(
+                            placeholder="pl. Wemos D1 Mini",
+                            id="cfg-board-type",
                         )
 
             # --- GPIO assignment ----------------------------------------
@@ -1406,6 +1412,7 @@ class ConfigTab(TabPane):
             ("#cfg-mqtt-topic", ""),
             ("#cfg-mqtt-fulltopic", "%prefix%/%topic%/"),
             ("#cfg-teleperiod", "300"),
+            ("#cfg-board-type", ""),
         ]
         for widget_id, value in defaults:
             try:
@@ -1571,6 +1578,8 @@ class ConfigTab(TabPane):
             await app.send_cmd_async("Status 2")   # Firmware / chip hardware
             await asyncio.sleep(0.4)
             await app.send_cmd_async("GPIO")       # GPIO function assignments
+            await asyncio.sleep(0.5)
+            await app.send_cmd_async("Mem1")       # Board type stored by SmartBlue
             await asyncio.sleep(1.0)   # Wait for all responses to arrive
 
             lines = list(bridge.line_buffer)
@@ -1658,6 +1667,13 @@ class ConfigTab(TabPane):
                     f"GPIO{g}={t}" for g, t in sorted(gpio_from_device.items())
                 )
                 filled.append(f"GPIO ({len(gpio_from_device)} pin): {summary}")
+
+            # --- Parse Mem1 (board type) --------------------------------
+            mem1_value = _parse_mem1(lines)
+            if mem1_value:
+                self._set_input("#cfg-board-type", mem1_value)
+                app.device_board_type = mem1_value
+                filled.append(f"Board típus: {mem1_value}")
 
             # --- Summary notification ----------------------------------
             filled_str = ", ".join(filled) if filled else "–"
@@ -1819,6 +1835,15 @@ class ConfigTab(TabPane):
         phase1: list[str] = []
         module_cmd: str   = ""
         gpio_cmds:  list[str] = []
+
+        # Include board type (Mem1) in phase1 if set
+        try:
+            board_type_val = self.query_one("#cfg-board-type", Input).value.strip()
+            if board_type_val:
+                phase1.append(f"Mem1 {board_type_val}")
+                self.app.device_board_type = board_type_val  # type: ignore[attr-defined]
+        except Exception:
+            pass
 
         for cmd, val in cmds:
             full = f"{cmd} {val}"

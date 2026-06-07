@@ -46,6 +46,8 @@ class TasmoApp(App):
         self.serial_bridge = AsyncSerialBridge()
         self.http_bridge = TasmotaHttpBridge()
         self.mqtt_manager = MQTTManager()
+        # Board type stored in device Mem1; shared between Config and Board tabs
+        self.device_board_type: str = ""
 
     # ------------------------------------------------------------------
     # Unified command sender
@@ -131,6 +133,7 @@ class TasmoApp(App):
 
     def reset_device_data(self) -> None:
         """Clear all device-specific data when connecting to a new device."""
+        self.device_board_type = ""
         try:
             from tasmota_manager.screens.board_screen import BoardTab
             board_tab: BoardTab = self.query_one(BoardTab)

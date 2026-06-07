@@ -350,6 +350,30 @@ def _to_type(val: object) -> Optional[str]:
     return None
 
 
+def _parse_mem1(lines: list[str]) -> str:
+    """Parse the Mem1 value from Tasmota response lines.
+
+    Tasmota returns: {"Mem1":"Wemos D1 Mini"} or {"Mem1":""}
+    Returns the value string, or "" if not found / empty.
+    """
+    import json as _json
+    for line in lines:
+        idx = line.find('"Mem1"')
+        if idx < 0:
+            continue
+        brace = line.rfind("{", 0, idx)
+        if brace < 0:
+            continue
+        try:
+            data = _json.loads(line[brace:])
+            val = data.get("Mem1", "")
+            if isinstance(val, str):
+                return val.strip()
+        except Exception:
+            pass
+    return ""
+
+
 def _parse_gpio_from_device(lines: list[str]) -> dict[int, str]:
     """
     Parse GPIO assignments from Tasmota serial responses.
@@ -660,6 +684,7 @@ class BoardTab(TabPane):
                         yield Label("–", id="board-dev-firmware")
                         yield Label("–", id="board-dev-hardware")
                         yield Label("", id="board-dev-heap")
+                        yield Label("", id="board-dev-board-type")
 
                     # --- WiFi -------------------------------------------
                     with Vertical(id="board-wifi-panel", classes="board-info-panel"):
@@ -712,6 +737,7 @@ class BoardTab(TabPane):
         self._sensor_data      = {}
         self._energy_data      = {}
         self._uptime              = ""
+        self._dev_board_type      = ""   # value of Mem1 on device
         self._polling             = False
         self._outputs_build_ver   = 0
 
@@ -1006,7 +1032,9 @@ class BoardTab(TabPane):
             # Falls back to individual GPIOx queries if bulk returns nothing.
             btn.label = "GPIO…"
             await app.send_cmd_async("GPIO")
-            await asyncio.sleep(0.8)   # wait for bulk response
+            await asyncio.sleep(0.5)
+            await app.send_cmd_async("Mem1")   # board type stored by SmartBlue
+            await asyncio.sleep(0.8)   # wait for all responses
 
             lines = list(bridge.line_buffer)
             self._apply_status1(_parse_status1(lines))
@@ -1016,6 +1044,12 @@ class BoardTab(TabPane):
             self._apply_status6(_parse_status6(lines))
             self._apply_status10(_parse_status10(lines))
             self._apply_status11(_parse_status11(lines))
+
+            # Board type from Mem1
+            mem1_board = _parse_mem1(lines)
+            if mem1_board:
+                app.device_board_type = mem1_board
+                self._apply_board_type_from_mem1(mem1_board)
 
             # GPIO assignments from individual GPIOx responses
             gpio_from_device = _parse_gpio_from_device(lines)
@@ -1067,6 +1101,42 @@ class BoardTab(TabPane):
     # ------------------------------------------------------------------
     # Apply parsed data → update state + UI
     # ------------------------------------------------------------------
+
+    def _apply_board_type_from_mem1(self, board_name: str) -> None:
+        """Auto-select board layout and rebuild diagram based on Mem1 value."""
+        self._dev_board_type = board_name
+        self._update_device_panel()
+        matched = BOARD_BY_NAME.get(board_name)
+        if matched is None:
+            # Case-insensitive fallback
+            lower = board_name.lower()
+            for name, layout in BOARD_BY_NAME.items():
+                if name.lower() == lower:
+                    matched = layout
+                    break
+        if matched is None:
+            self.notify(
+                f"Mem1 board típus '{board_name}' nem ismert – diagram nem frissítve.",
+                severity="warning", timeout=5,
+            )
+            return
+        self._current_board = matched
+        try:
+            sel: Select = self.query_one("#board-type-select", Select)
+            sel.value = matched.name
+        except Exception:
+            pass
+        try:
+            diag: BoardDiagram = self.query_one("#board-diagram", BoardDiagram)
+            diag.set_layout(matched)
+            diag.set_gpio_functions(self._gpio_assignments)
+        except Exception:
+            pass
+        self._rebuild_pin_table()
+        self.notify(
+            f"Board auto-kiválasztva Mem1 alapján: {matched.name}",
+            severity="information", timeout=4,
+        )
 
     def _apply_status1(self, data: dict) -> None:
         if data.get("hostname"):
@@ -1381,6 +1451,7 @@ class BoardTab(TabPane):
         self._sensor_data      = {}
         self._energy_data      = {}
         self._uptime           = ""
+        self._dev_board_type   = ""
         # Clear uptime label directly (only updated on new data, not in panel methods)
         try:
             self.query_one("#board-uptime-label").update("")
@@ -1788,6 +1859,10 @@ class BoardTab(TabPane):
                 )
             else:
                 self.query_one("#board-dev-heap").update("[dim]Szabad RAM: –[/dim]")
+            bt = self._dev_board_type or ""
+            self.query_one("#board-dev-board-type").update(
+                f"[dim]Board:[/dim]     [bold magenta]{bt}[/bold magenta]" if bt else ""
+            )
         except Exception:
             pass
 
