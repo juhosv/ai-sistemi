@@ -318,6 +318,7 @@ from tasmota_manager.groups_manager import (
     get_user_name,
     list_regions,
     list_users,
+    sanitize_id,
     update_region,
     update_user,
 )
@@ -817,9 +818,27 @@ class ConfigTab(TabPane):
             user_id = uid if isinstance(uid, str) else ""
             self._on_edit_region_changed(event.value, user_id)
 
+    _ID_INPUTS = {"cfg-new-user-id", "cfg-new-region-id", "cfg-mqtt-topic"}
+
     def on_input_changed(self, event: Input.Changed) -> None:
         self._update_preview()
-        if event.input.id == "cfg-mqtt-topic":
+        inp_id = event.input.id or ""
+
+        # Sanitize identifier fields in real-time (spaces → _, strip forbidden chars)
+        if inp_id in ("cfg-new-user-id", "cfg-new-region-id"):
+            raw = event.value
+            clean = sanitize_id(raw)
+            if clean != raw:
+                # Preserve cursor position: sanitize shifts chars, so put cursor at end
+                event.input.value = clean
+            return  # preview not relevant for these fields
+
+        if inp_id == "cfg-mqtt-topic":
+            # Also sanitize the device topic
+            raw = event.value
+            clean = sanitize_id(raw)
+            if clean != raw:
+                event.input.value = clean
             try:
                 user_sel: Select = self.query_one("#cfg-user-select")
                 region_sel: Select = self.query_one("#cfg-region-select")

@@ -24,6 +24,27 @@ from typing import Optional
 
 GROUPS_FILE = Path(__file__).parent.parent / "groups.json"
 
+# Characters forbidden in MQTT topic segments
+_TOPIC_FORBIDDEN = str.maketrans({
+    " ": "_",
+    "\t": "_",
+    "#": "",
+    "+": "",
+    "/": "",
+    "\x00": "",
+})
+
+
+def sanitize_id(value: str) -> str:
+    """Replace or remove characters not allowed in MQTT topic segments.
+
+    Rules:
+        space / tab  → underscore
+        #, +, /      → removed (topic wildcards / separator)
+        null char    → removed
+    """
+    return value.strip().translate(_TOPIC_FORBIDDEN)
+
 
 # ---------------------------------------------------------------------------
 # Load / Save / Migrate
@@ -117,7 +138,7 @@ def get_region_name(user_id: str, region_id: str) -> str:
 
 def add_user(user_id: str, name: str) -> bool:
     """Add a new top-level user. Returns False if id already exists."""
-    user_id = user_id.strip()
+    user_id = sanitize_id(user_id)
     name = name.strip()
     if not user_id:
         return False
@@ -134,7 +155,7 @@ def add_user(user_id: str, name: str) -> bool:
 
 def update_user(old_id: str, new_id: str, new_name: str) -> bool:
     """Update a user's id and/or name. Returns False if not found or new_id conflicts."""
-    new_id = new_id.strip()
+    new_id = sanitize_id(new_id)
     new_name = new_name.strip()
     if not new_id:
         return False
@@ -169,7 +190,7 @@ def delete_user(user_id: str) -> bool:
 
 def add_region(user_id: str, region_id: str, name: str) -> bool:
     """Add a region to a user. Returns False if user not found or region exists."""
-    region_id = region_id.strip()
+    region_id = sanitize_id(region_id)
     name = name.strip()
     if not region_id:
         return False
@@ -189,7 +210,7 @@ def add_region(user_id: str, region_id: str, name: str) -> bool:
 
 def update_region(user_id: str, old_id: str, new_id: str, new_name: str) -> bool:
     """Update a region within a user. Returns False if not found or id conflict."""
-    new_id = new_id.strip()
+    new_id = sanitize_id(new_id)
     new_name = new_name.strip()
     if not new_id:
         return False
