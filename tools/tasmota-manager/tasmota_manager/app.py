@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from pathlib import Path
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -242,6 +243,141 @@ class TasmoApp(App):
                 rules_tab.update_from_gpio(gpio)
             except Exception:
                 pass
+
+    # ------------------------------------------------------------------
+    # Auto-connect after serial configuration send
+    # ------------------------------------------------------------------
+
+    def trigger_auto_connect(
+        self,
+        mqtt_host: str = "",
+        mqtt_port: int = 1883,
+        mqtt_user: str = "",
+        mqtt_pass: str = "",
+        mqtt_subscribe: str = "#",
+    ) -> None:
+        """Start a background watcher that detects the device IP from the serial
+        log after reboot, then automatically connects via HTTP and MQTT."""
+        self.run_worker(
+            self._auto_connect_worker(
+                mqtt_host=mqtt_host,
+                mqtt_port=mqtt_port,
+                mqtt_user=mqtt_user,
+                mqtt_pass=mqtt_pass,
+                mqtt_subscribe=mqtt_subscribe,
+            ),
+            name="auto_connect",
+            exclusive=False,
+        )
+
+    async def _auto_connect_worker(
+        self,
+        mqtt_host: str,
+        mqtt_port: int,
+        mqtt_user: str,
+        mqtt_pass: str,
+        mqtt_subscribe: str,
+    ) -> None:
+        """Watch the serial buffer for a device IP and auto-connect when found."""
+        _IP_RE = re.compile(r"\b(\d{1,3}(?:\.\d{1,3}){3})\b")
+        _SKIP_IPS = {"0.0.0.0", "255.255.255.255", "192.168.4.1"}
+
+        # Wait for device to reboot and appear (up to 45 seconds)
+        deadline = asyncio.get_event_loop().time() + 45.0
+        detected_ip: str = ""
+
+        while asyncio.get_event_loop().time() < deadline:
+            await asyncio.sleep(1.5)
+            if not self.serial_bridge.is_connected:
+                break
+            for line in list(self.serial_bridge.line_buffer)[-40:]:
+                # Tasmota logs the IP as "IP: 192.168.1.x" or in StatusNET JSON
+                if "IP:" not in line and "IPAddress" not in line and "Stat" not in line:
+                    continue
+                for m in _IP_RE.finditer(line):
+                    ip = m.group(1)
+                    if ip not in _SKIP_IPS and not ip.startswith("0."):
+                        detected_ip = ip
+                        break
+                if detected_ip:
+                    break
+            if detected_ip:
+                break
+
+        if not detected_ip:
+            self.notify(
+                "Auto-connect: nem sikerült IP-t detektálni (45 mp timeout).",
+                severity="warning",
+            )
+            return
+
+        # HTTP connect
+        self.notify(
+            f"Auto-connect: IP detektálva → {detected_ip}, HTTP kapcsolódás…",
+            severity="information",
+        )
+        loop = asyncio.get_event_loop()
+        ok_http = await loop.run_in_executor(None, self.http_bridge.connect, detected_ip)
+        if ok_http:
+            self.notify(f"Auto-connect: HTTP kapcsolat kész ({detected_ip})", severity="information")
+            # Update SerialTab status
+            try:
+                from tasmota_manager.screens.serial_screen import SerialTab
+                serial_tab: SerialTab = self.query_one(SerialTab)
+                serial_tab._set_http_status(detected_ip)
+            except Exception:
+                pass
+        else:
+            self.notify(f"Auto-connect: HTTP nem sikerült ({detected_ip})", severity="warning")
+
+        # MQTT connect
+        if mqtt_host:
+            try:
+                from tasmota_manager.groups_manager import build_mqtt_subscribe_topic
+                self.mqtt_manager.connect(
+                    host=mqtt_host,
+                    port=mqtt_port,
+                    user=mqtt_user,
+                    password=mqtt_pass,
+                    subscribe_topic=mqtt_subscribe,
+                )
+                self.notify(
+                    f"Auto-connect: MQTT kapcsolódva → {mqtt_host}:{mqtt_port}",
+                    severity="information",
+                )
+                # Update MQTT tab UI
+                try:
+                    from tasmota_manager.screens.mqtt_screen import MQTTTab
+                    from textual.widgets import Button, Input, Label
+                    mqtt_tab: MQTTTab = self.query_one(MQTTTab)
+                    mqtt_tab.connected = True
+                    mqtt_tab.query_one("#mqtt-connect-btn", Button).label = "Lecsatlakozás"
+                    mqtt_tab.query_one("#mqtt-connect-btn", Button).variant = "error"
+                    mqtt_tab.query_one("#mqtt-conn-status", Label).update(
+                        f"[green]● {mqtt_host}:{mqtt_port}[/green]"
+                    )
+                except Exception:
+                    pass
+            except Exception as exc:
+                self.notify(f"Auto-connect: MQTT hiba – {exc}", severity="warning")
+
+    # ------------------------------------------------------------------
+    # MQTT Monitor → Board sync
+    # ------------------------------------------------------------------
+
+    def set_monitored_device(
+        self,
+        user_id: str,
+        region_id: str,
+        device_id: str,
+    ) -> None:
+        """Called when MQTT Monitor selects a device: update Board tab display."""
+        try:
+            from tasmota_manager.screens.board_screen import BoardTab
+            board_tab: BoardTab = self.query_one(BoardTab)
+            board_tab.set_remote_device(user_id=user_id, region_id=region_id, device_id=device_id)
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     # Cross-tab sync: Config "Modul/Board" ↔ Board "Board" select

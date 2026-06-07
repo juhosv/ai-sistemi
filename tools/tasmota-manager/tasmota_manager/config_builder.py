@@ -340,5 +340,10 @@ def load_profile(name: str) -> DeviceConfig:
 
 
 def save_profile(config: DeviceConfig, name: str) -> None:
+    """Save config profile, excluding user_id and region_id (deployment-specific)."""
     PROFILES_DIR.mkdir(exist_ok=True)
-    config.save(PROFILES_DIR / f"{name}.json")
+    data = json.loads(config.model_dump_json())
+    data.pop("user_id", None)
+    data.pop("region_id", None)
+    path = PROFILES_DIR / f"{name}.json"
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")

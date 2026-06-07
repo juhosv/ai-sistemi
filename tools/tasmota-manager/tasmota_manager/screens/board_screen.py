@@ -740,6 +740,8 @@ class BoardTab(TabPane):
         self._dev_board_type      = ""   # value of Mem1 on device
         self._polling             = False
         self._outputs_build_ver   = 0
+        self._mqtt_user_id        = ""   # set when MQTT Monitor selects a device
+        self._mqtt_region_id      = ""
 
         self._pin_table_keys: dict[int, str] = {}   # gpio_num → row_key
         self._outputs_signature: tuple = ()          # snapshot of current outputs structure
@@ -1436,6 +1438,29 @@ class BoardTab(TabPane):
         self._rebuild_pin_table()
         self._rebuild_outputs_panel()
 
+    def set_remote_device(self, user_id: str, region_id: str, device_id: str) -> None:
+        """Called from MQTT Monitor when a device is selected for monitoring.
+
+        Updates the Board tab to show the selected device's MQTT path.
+        """
+        self._dev_topic = device_id
+        self._mqtt_user_id  = user_id
+        self._mqtt_region_id = region_id
+        # Update the board-type-select topic label and info panel
+        try:
+            self._update_device_info_panel()
+        except Exception:
+            pass
+        # Notify user
+        try:
+            from textual.widgets import Label
+            lbl = self.query_one("#board-conn-status", Label)
+            lbl.update(
+                f"[cyan]Monitorozva: {user_id}/{region_id}/{device_id}[/cyan]"
+            )
+        except Exception:
+            pass
+
     def clear_device_data(self) -> None:
         """Reset all device-specific state (called when a new serial connection is made)."""
         self._gpio_assignments = {}
@@ -1460,6 +1485,8 @@ class BoardTab(TabPane):
         self._energy_data      = {}
         self._uptime           = ""
         self._dev_board_type   = ""
+        self._mqtt_user_id     = ""
+        self._mqtt_region_id   = ""
         # Clear uptime label directly (only updated on new data, not in panel methods)
         try:
             self.query_one("#board-uptime-label").update("")
@@ -1767,8 +1794,14 @@ class BoardTab(TabPane):
             mqtt_mgr = self.app.mqtt_manager  # type: ignore[attr-defined]
             topic = self._dev_topic
             if mqtt_mgr.connected and topic:
-                mqtt_mgr.publish(f"cmnd/{topic}/{cmd}", value)
-                self.notify(f"MQTT → cmnd/{topic}/{cmd}  {value}", severity="information")
+                uid = self._mqtt_user_id
+                rid = self._mqtt_region_id
+                if uid and rid:
+                    mqtt_topic = f"{uid}/{rid}/{topic}/cmnd/{cmd}"
+                else:
+                    mqtt_topic = f"cmnd/{topic}/{cmd}"
+                mqtt_mgr.publish(mqtt_topic, value)
+                self.notify(f"MQTT → {mqtt_topic}  {value}", severity="information")
                 sent = True
 
         if not sent:

@@ -263,6 +263,72 @@ def build_fulltopic(region_id: str, user_id: str) -> str:
     return f"{user_id}/{region_id}/%topic%/%prefix%/"
 
 
+# ---------------------------------------------------------------------------
+# Device registry  (profiles/device_registry.json)
+# ---------------------------------------------------------------------------
+
+DEVICE_REGISTRY_FILE = GROUPS_FILE.parent / "profiles" / "device_registry.json"
+
+
+def load_device_registry() -> list[dict]:
+    """Return list of registered device dicts."""
+    try:
+        if DEVICE_REGISTRY_FILE.exists():
+            return json.loads(DEVICE_REGISTRY_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return []
+
+
+def save_device_to_registry(
+    user_id: str,
+    region_id: str,
+    device_id: str,
+    mac: str = "",
+    board_type: str = "",
+) -> None:
+    """Upsert a device entry in the registry (keyed by user/region/device_id)."""
+    if not user_id or not region_id or not device_id:
+        return
+    try:
+        DEVICE_REGISTRY_FILE.parent.mkdir(exist_ok=True)
+        devices = load_device_registry()
+        import datetime as _dt
+        today = _dt.date.today().isoformat()
+        for entry in devices:
+            if (entry.get("user_id") == user_id
+                    and entry.get("region_id") == region_id
+                    and entry.get("device_id") == device_id):
+                if mac:
+                    entry["mac"] = mac
+                if board_type:
+                    entry["board_type"] = board_type
+                entry["last_configured"] = today
+                break
+        else:
+            devices.append({
+                "user_id": user_id,
+                "region_id": region_id,
+                "device_id": device_id,
+                "mac": mac,
+                "board_type": board_type,
+                "last_configured": today,
+            })
+        DEVICE_REGISTRY_FILE.write_text(
+            json.dumps(devices, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+    except Exception:
+        pass
+
+
+def get_devices_for_region(user_id: str, region_id: str) -> list[dict]:
+    """Return registered devices for a given user/region."""
+    return [
+        d for d in load_device_registry()
+        if d.get("user_id") == user_id and d.get("region_id") == region_id
+    ]
+
+
 def build_mqtt_subscribe_topic(region_id: str, user_id: str, device_topic: str) -> str:
     """Build the MQTT subscription wildcard for a specific device.
 

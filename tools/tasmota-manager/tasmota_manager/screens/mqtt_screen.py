@@ -23,6 +23,11 @@ from textual.widgets import (
 from textual.widgets.tree import TreeNode
 
 from tasmota_manager.mqtt_client import MqttMessage
+from tasmota_manager.groups_manager import (
+    list_users,
+    list_regions,
+    get_devices_for_region,
+)
 
 
 _PREFIX_COLORS = {
@@ -44,18 +49,34 @@ class MQTTTab(TabPane):
     # topic tree structure: {prefix: {device: {command: last_ts}}}
     _topic_tree_data: dict[str, dict[str, dict[str, str]]] = {}
 
+    DEFAULT_CSS = """
+    #mqtt-connect-fields {
+        height: auto;
+    }
+    #mqtt-connect-actions {
+        height: auto;
+        margin-top: 0;
+    }
+    #mqtt-conn-status {
+        min-width: 20;
+        content-align: left middle;
+    }
+    """
+
     def compose(self) -> ComposeResult:
         with Vertical(id="mqtt-tab"):
-            # --- Connection row -----------------------------------------
-            with Horizontal(id="mqtt-connect-row"):
-                yield Label("Host:", classes="label")
-                yield Input(value="broker.emqx.io", id="mqtt-host-input")
-                yield Label("Port:", classes="label")
-                yield Input(value="1883", id="mqtt-port-input")
-                yield Label("Topic:", classes="label")
-                yield Input(value="#", id="mqtt-sub-topic-input")
-                yield Button("Csatlakozás", id="mqtt-connect-btn", variant="success")
-                yield Label("", id="mqtt-conn-status")
+            # --- Connection: inputs row + buttons row (always visible) ---
+            with Vertical(id="mqtt-connect-row"):
+                with Horizontal(id="mqtt-connect-fields"):
+                    yield Label("Host:", classes="label")
+                    yield Input(value="broker.emqx.io", id="mqtt-host-input")
+                    yield Label("Port:", classes="label")
+                    yield Input(value="1883", id="mqtt-port-input")
+                    yield Label("Topic:", classes="label")
+                    yield Input(value="#", id="mqtt-sub-topic-input")
+                with Horizontal(id="mqtt-connect-actions"):
+                    yield Button("Csatlakozás", id="mqtt-connect-btn", variant="success")
+                    yield Label("", id="mqtt-conn-status")
 
             # --- Main split: tree + right panel -------------------------
             with Horizontal(id="mqtt-main"):
@@ -82,6 +103,29 @@ class MQTTTab(TabPane):
                         auto_scroll=True,
                     )
 
+            # --- Device selector row ------------------------------------
+            with Horizontal(id="mqtt-device-selector-row"):
+                yield Label("Eszköz:", classes="label")
+                yield Select(
+                    options=[],
+                    id="mqtt-sel-user",
+                    allow_blank=True,
+                    prompt="– User –",
+                )
+                yield Select(
+                    options=[],
+                    id="mqtt-sel-region",
+                    allow_blank=True,
+                    prompt="– Régió –",
+                )
+                yield Select(
+                    options=[],
+                    id="mqtt-sel-device",
+                    allow_blank=True,
+                    prompt="– Eszköz –",
+                )
+                yield Button("Monitorozás", id="mqtt-monitor-device-btn", variant="primary")
+
             # --- Filter row ---------------------------------------------
             with Horizontal(id="mqtt-filter-row"):
                 yield Label("Szűrő:", classes="label")
@@ -106,6 +150,7 @@ class MQTTTab(TabPane):
 
     def on_mount(self) -> None:
         self.run_worker(self._mqtt_consumer(), exclusive=True, name="mqtt_consumer")
+        self._refresh_user_selector()
 
     # ------------------------------------------------------------------
     # Button handlers
@@ -120,6 +165,93 @@ class MQTTTab(TabPane):
             log.clear()
             self.message_count = 0
             self._update_count()
+        elif bid == "mqtt-monitor-device-btn":
+            self._start_monitoring_selected_device()
+
+    def on_select_changed(self, event: Select.Changed) -> None:
+        sid = event.select.id
+        if sid == "mqtt-sel-user":
+            user_id = event.value
+            if user_id and user_id is not Select.BLANK and isinstance(user_id, str):
+                regions = [(name, rid) for rid, name in list_regions(user_id)]
+            else:
+                regions = []
+            self.query_one("#mqtt-sel-region", Select).set_options(regions)
+            self.query_one("#mqtt-sel-device", Select).set_options([])
+        elif sid == "mqtt-sel-region":
+            region_id = event.value
+            user_sel = self.query_one("#mqtt-sel-user", Select)
+            user_id = user_sel.value
+            if (region_id and region_id is not Select.BLANK and isinstance(region_id, str)
+                    and user_id and isinstance(user_id, str)):
+                devices_data = get_devices_for_region(user_id, region_id)
+                device_opts = [(d["device_id"], d["device_id"]) for d in devices_data]
+            else:
+                device_opts = []
+            self.query_one("#mqtt-sel-device", Select).set_options(device_opts)
+
+    def _refresh_user_selector(self) -> None:
+        """Populate the user dropdown from groups.json."""
+        try:
+            users = [(name, uid) for uid, name in list_users()]
+            self.query_one("#mqtt-sel-user", Select).set_options(users)
+        except Exception:
+            pass
+
+    def _start_monitoring_selected_device(self) -> None:
+        """Subscribe to the selected device's MQTT topic and update the filter."""
+        user_id = self.query_one("#mqtt-sel-user", Select).value
+        region_id = self.query_one("#mqtt-sel-region", Select).value
+        device_id = self.query_one("#mqtt-sel-device", Select).value
+        if (not user_id or user_id is Select.BLANK
+                or not region_id or region_id is Select.BLANK
+                or not device_id or device_id is Select.BLANK):
+            self.notify("Válassz user-t, régiót és eszközt!", severity="warning")
+            return
+
+        from tasmota_manager.groups_manager import build_mqtt_subscribe_topic
+        sub_topic = build_mqtt_subscribe_topic(str(region_id), str(user_id), str(device_id))
+        # Update the subscription topic and device filter
+        self.query_one("#mqtt-sub-topic-input", Input).value = sub_topic
+        self.query_one("#mqtt-device-filter", Input).value = str(device_id)
+
+        # Push user/region/device_id to Board tab
+        try:
+            self.app.set_monitored_device(  # type: ignore[attr-defined]
+                user_id=str(user_id),
+                region_id=str(region_id),
+                device_id=str(device_id),
+            )
+        except Exception:
+            pass
+
+        # Reconnect MQTT with new topic if already connected
+        mqtt_mgr = self.app.mqtt_manager  # type: ignore[attr-defined]
+        if mqtt_mgr.connected:
+            host = self.query_one("#mqtt-host-input", Input).value.strip()
+            port_str = self.query_one("#mqtt-port-input", Input).value.strip()
+            port = int(port_str) if port_str.isdigit() else 1883
+            try:
+                mqtt_user = self.app.query_one("#cfg-mqtt-user", Input).value.strip()  # type: ignore[attr-defined]
+                mqtt_pass = self.app.query_one("#cfg-mqtt-pass", Input).value.strip()  # type: ignore[attr-defined]
+            except Exception:
+                mqtt_user = mqtt_pass = ""
+            mqtt_mgr.disconnect()
+            mqtt_mgr.connect(
+                host=host, port=port,
+                user=mqtt_user or "",
+                password=mqtt_pass or "",
+                subscribe_topic=sub_topic,
+            )
+            self.notify(
+                f"Monitorozás: {user_id}/{region_id}/{device_id}",
+                severity="information",
+            )
+        else:
+            self.notify(
+                f"Eszköz kiválasztva: {user_id}/{region_id}/{device_id} — kattints Csatlakozás-ra!",
+                severity="information",
+            )
 
     def on_tree_node_selected(self, event: Tree.NodeSelected) -> None:
         node = event.node
@@ -151,8 +283,22 @@ class MQTTTab(TabPane):
             sub_topic = self.query_one("#mqtt-sub-topic-input", Input).value.strip() or "#"
             port = int(port_str) if port_str.isdigit() else 1883
 
+            # Read credentials from Config tab (not exposed in Monitor UI)
+            mqtt_user = ""
+            mqtt_pass = ""
             try:
-                mqtt_mgr.connect(host=host, port=port, subscribe_topic=sub_topic)
+                mqtt_user = self.app.query_one("#cfg-mqtt-user", Input).value.strip()  # type: ignore[attr-defined]
+                mqtt_pass = self.app.query_one("#cfg-mqtt-pass", Input).value.strip()  # type: ignore[attr-defined]
+            except Exception:
+                pass
+
+            try:
+                mqtt_mgr.connect(
+                    host=host, port=port,
+                    user=mqtt_user or "",
+                    password=mqtt_pass or "",
+                    subscribe_topic=sub_topic,
+                )
                 self.connected = True
                 btn.label = "Lecsatlakozás"
                 btn.variant = "error"
@@ -196,23 +342,22 @@ class MQTTTab(TabPane):
 
     def _update_topic_tree(self, msg: MqttMessage) -> None:
         tree: Tree = self.query_one("#mqtt-tree")
-        parts = msg.topic.split("/")
-        if len(parts) < 3:
+        prefix  = msg.prefix
+        device  = msg.device_topic
+        command = msg.command
+        if not prefix or not device:
             return
 
-        prefix, device, command = parts[0], parts[1], "/".join(parts[2:])
         ts = msg.timestamp.strftime("%H:%M:%S")
 
-        # Build/update nested structure
+        # Build/update nested structure: {prefix: {device: {command: ts}}}
         if prefix not in self._topic_tree_data:
             self._topic_tree_data[prefix] = {}
-            tree.root.add(prefix, data=None, expand=True)
         if device not in self._topic_tree_data[prefix]:
             self._topic_tree_data[prefix][device] = {}
-
         self._topic_tree_data[prefix][device][command] = ts
 
-        # Rebuild the tree (simple approach: clear and rebuild)
+        # Rebuild tree display
         tree.clear()
         for pfx, devices in sorted(self._topic_tree_data.items()):
             color = _PREFIX_COLORS.get(pfx, "white")
@@ -228,10 +373,9 @@ class MQTTTab(TabPane):
                     dot = "[dim]●[/dim]"
                 dev_node = pfx_node.add(f"{dot} {dev}", expand=True)
                 for cmd, last_ts in sorted(commands.items()):
-                    full_topic = f"{pfx}/{dev}/{cmd}"
                     dev_node.add_leaf(
                         f"[dim]{cmd}[/dim]  [dim]{last_ts}[/dim]",
-                        data=full_topic,
+                        data=msg.topic,
                     )
 
     def _log_message(self, msg: MqttMessage) -> None:

@@ -149,6 +149,9 @@ def _actions_from_assignments(assignments: dict[int, str]) -> list[tuple[str, st
             relay_count += 1
             # One entry per relay; ON/OFF/TOGGLE selected via the value dropdown
             options.append((f"Relay {relay_count}{pin_tag}", f"__RELAY_{relay_count}"))
+        elif base == "led":
+            relay_count += 1
+            options.append((f"LED {relay_count}{pin_tag}", f"__LED_{relay_count}"))
         elif base == "pwm":
             pwm_count += 1
             options.append((f"PWM {pwm_count} – Fényerő{pin_tag}", f"__DIMMER_{pwm_count}"))
@@ -195,7 +198,7 @@ _RELAY_ACTION_OPTIONS: list[tuple[str, str]] = [
 
 def _get_action_value_options(raw: str) -> Optional[list[tuple[str, str]]]:
     """Return preset dropdown options for the action value, if applicable."""
-    if raw.startswith("__RELAY_"):
+    if raw.startswith("__RELAY_") or raw.startswith("__LED_"):
         return _RELAY_ACTION_OPTIONS
     return None  # numeric / free input
 
@@ -451,7 +454,7 @@ def _resolve_action(raw: str, value: str) -> str:
     """Convert internal action token + value to Tasmota command string."""
     if not raw:
         return ""
-    if raw.startswith("__RELAY_"):
+    if raw.startswith("__RELAY_") or raw.startswith("__LED_"):
         n = raw.split("_")[-1]
         cmd = value.upper() if value.upper() in ("ON", "OFF", "TOGGLE") else "OFF"
         return f"Power{n} {cmd}"

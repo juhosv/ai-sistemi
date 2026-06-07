@@ -1,0 +1,1015 @@
+/* SmartBlue Tasmota Manager – Textual CSS */
+
+/* ------------------------------------------------------------------ */
+/* Global                                                               */
+/* ------------------------------------------------------------------ */
+
+Screen {
+    background: $surface;
+}
+
+TabbedContent {
+    height: 1fr;
+}
+
+TabbedContent ContentSwitcher {
+    height: 1fr;
+}
+
+/* Shared section box */
+.section {
+    border: solid $primary-darken-2;
+    margin: 0 1 1 1;
+    padding: 0 1 1 1;
+    height: auto;
+}
+
+.section-title {
+    background: $primary-darken-2;
+    color: $text;
+    width: 100%;
+    height: 1;
+    padding: 0 1;
+    margin: 0 0 1 0;
+}
+
+.row {
+    height: auto;
+    layout: horizontal;
+    align: left middle;
+    margin: 0 0 1 0;
+}
+
+.label {
+    width: 18;
+    color: $text-muted;
+    height: 1;
+    content-align: right middle;
+    padding: 0 1 0 0;
+}
+
+.label-wide {
+    width: 28;
+    color: $text-muted;
+    height: 1;
+    content-align: right middle;
+    padding: 0 1 0 0;
+}
+
+.hint {
+    color: $text-disabled;
+    height: 1;
+    margin: 0 0 0 1;
+}
+
+.btn-row {
+    height: 3;
+    layout: horizontal;
+    align: center middle;
+    margin: 1 0 0 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* Flash tab                                                            */
+/* ------------------------------------------------------------------ */
+
+#flash-tab {
+    padding: 1;
+}
+
+#flash-port-row {
+    height: 3;
+    layout: horizontal;
+    align: left middle;
+    margin: 0 0 1 0;
+}
+
+#flash-firmware-list {
+    height: auto;
+    margin: 0 0 1 0;
+}
+
+#flash-progress {
+    height: auto;
+    margin: 0 0 1 0;
+}
+
+#flash-log {
+    height: 1fr;
+    border: solid $primary-darken-2;
+}
+
+/* ------------------------------------------------------------------ */
+/* Serial Monitor tab                                                   */
+/* ------------------------------------------------------------------ */
+
+#serial-tab {
+    padding: 1;
+    layout: vertical;
+}
+
+#serial-controls {
+    height: 3;
+    layout: horizontal;
+    align: left middle;
+    margin: 0 0 1 0;
+}
+
+#serial-log-bar {
+    height: 1;
+    layout: horizontal;
+    align: left middle;
+    padding: 0 1;
+    background: $surface-darken-1;
+}
+
+#serial-log-path {
+    height: 1;
+    width: 1fr;
+    color: $text-muted;
+}
+
+#serial-open-log-dir {
+    height: 1;
+    min-width: 3;
+    border: none;
+    background: transparent;
+    padding: 0 1;
+}
+
+#serial-wifi-bar {
+    height: 1;
+    layout: horizontal;
+    align: left middle;
+    margin: 0 0 0 0;
+    padding: 0 1;
+    background: $primary-darken-3;
+}
+
+#serial-wifi-status {
+    height: 1;
+    width: 1fr;
+}
+
+#http-connect-panel {
+    height: 3;
+    layout: horizontal;
+    align: left middle;
+    padding: 0 1;
+    background: $surface-darken-2;
+    margin: 0 0 0 0;
+}
+
+#http-ip-input {
+    width: 22;
+}
+
+#http-pw-input {
+    width: 18;
+}
+
+#http-connect-btn {
+    width: 16;
+}
+
+#http-status-lbl {
+    height: 1;
+    width: 1fr;
+    padding: 0 1;
+}
+
+#serial-quick-cmds {
+    height: 3;
+    layout: horizontal;
+    align: left middle;
+    margin: 0 0 1 0;
+}
+
+#serial-output {
+    height: 1fr;
+    border: solid $primary-darken-2;
+    margin: 0 0 1 0;
+}
+
+#serial-input-row {
+    height: 3;
+    layout: horizontal;
+    align: left middle;
+}
+
+#serial-cmd-input {
+    width: 1fr;
+}
+
+/* ------------------------------------------------------------------ */
+/* Config tab                                                           */
+/* ------------------------------------------------------------------ */
+
+#config-tab {
+    padding: 1;
+    overflow-y: auto;
+}
+
+#config-profile-row {
+    height: 3;
+    layout: horizontal;
+    align: left middle;
+    margin: 0 0 0 0;
+    overflow: hidden hidden;
+}
+
+#config-profile-select {
+    width: 28;
+}
+
+#cfg-load-btn {
+    width: 16;
+}
+
+#cfg-save-btn {
+    width: 14;
+}
+
+#cfg-profile-name-input {
+    width: 36;
+}
+
+#config-group-row {
+    height: 3;
+    layout: horizontal;
+    align: left middle;
+    margin: 0 0 0 0;
+    overflow: hidden hidden;
+}
+
+#cfg-region-select {
+    width: 30;
+}
+
+#cfg-user-select {
+    width: 26;
+}
+
+#cfg-groups-edit-btn {
+    width: 16;
+}
+
+#config-group-row Label,
+.cfg-row-label {
+    height: 3;
+    content-align: left middle;
+    padding: 0 1;
+    color: $text-muted;
+}
+
+#cfg-reset-btn {
+    width: 12;
+    margin-left: 1;
+}
+
+#cfg-groups-editor {
+    height: auto;
+    border: round $accent;
+    padding: 1 2;
+    margin: 0 0 1 0;
+    background: $surface;
+}
+
+#cfg-groups-editor.hidden {
+    display: none;
+}
+
+#cfg-groups-editor-inner {
+    height: auto;
+    layout: horizontal;
+}
+
+#cfg-groups-region-col {
+    width: 1fr;
+    padding: 0 2 0 0;
+}
+
+#cfg-groups-user-col {
+    width: 1fr;
+    padding: 0 0 0 2;
+}
+
+.subsection-title {
+    color: $text-muted;
+    text-style: bold;
+    margin: 0 0 1 0;
+}
+
+#cfg-edit-region-select,
+#cfg-edit-user-select {
+    width: 1fr;
+    margin: 0 0 1 0;
+}
+
+#cfg-new-region-id,
+#cfg-new-user-id {
+    width: 20;
+}
+
+#cfg-new-region-name,
+#cfg-new-user-name {
+    width: 1fr;
+}
+
+#cfg-add-region-btn,
+#cfg-add-user-btn {
+    width: 14;
+}
+
+#cfg-del-region-btn,
+#cfg-del-user-btn {
+    width: 20;
+    margin: 1 0 0 0;
+}
+
+#config-fetch-row {
+    height: 3;
+    layout: horizontal;
+    align: left middle;
+    margin: 0 0 1 0;
+}
+
+#cfg-fetch-hint {
+    width: 1fr;
+    height: 1;
+    color: $text-disabled;
+    content-align: left middle;
+}
+
+#cfg-fetch-status {
+    height: 1;
+    width: auto;
+    content-align: left middle;
+}
+
+#config-top-panels {
+    layout: horizontal;
+    height: auto;
+    margin: 0 0 1 0;
+}
+
+#wifi-panel {
+    width: 1fr;
+    border: solid $primary-darken-2;
+    margin: 0 1 0 0;
+    padding: 0 1 1 1;
+    height: auto;
+}
+
+#wifi-scan-row {
+    height: auto;
+    margin: 0 0 1 0;
+    align: left middle;
+}
+
+#wifi-scan-row Button {
+    min-width: 18;
+}
+
+#wifi-scan-status {
+    margin: 0 0 0 1;
+    color: $text-muted;
+}
+
+#wifi-scan-results {
+    height: auto;
+    margin: 0 0 1 0;
+    border: dashed $primary-darken-3;
+    padding: 0 1 1 1;
+    background: $surface-darken-1;
+}
+
+#wifi-scan-results.hidden {
+    display: none;
+}
+
+#wifi-scan-results Select {
+    width: 1fr;
+    margin: 1 0 0 0;
+}
+
+#wifi-pick-row {
+    height: auto;
+    margin: 1 0 0 0;
+    align: left middle;
+}
+
+#wifi-pick-row Button {
+    min-width: 14;
+    margin-right: 1;
+}
+
+#mqtt-panel {
+    width: 1fr;
+    border: solid $primary-darken-2;
+    margin: 0 0 0 1;
+    padding: 0 1 1 1;
+    height: auto;
+}
+
+#general-panel {
+    border: solid $primary-darken-2;
+    margin: 0 0 1 0;
+    padding: 0 1 1 1;
+    height: auto;
+    layout: horizontal;
+}
+
+#general-left {
+    width: 1fr;
+    height: auto;
+    margin: 0 1 0 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* GPIO – interactive board diagram                                     */
+/* ------------------------------------------------------------------ */
+
+#gpio-panel {
+    border: solid $primary-darken-2;
+    margin: 0 0 1 0;
+    padding: 0 0 1 0;
+    height: auto;
+    layout: horizontal;
+}
+
+#gpio-board-col {
+    width: 1fr;
+    min-width: 28;
+    padding: 0 1;
+    height: auto;
+}
+
+#gpio-config-col {
+    width: 1fr;
+    min-width: 34;
+    border-left: solid $primary-darken-2;
+    padding: 0 1;
+    height: auto;
+}
+
+#gpio-board-hint {
+    margin: 0 0 1 0;
+}
+
+#gpio-diagram-container {
+    height: auto;
+}
+
+/* InteractiveBoardDiagram widget itself must auto-size */
+InteractiveBoardDiagram {
+    height: auto;
+    width: 100%;
+}
+
+/* The interactive board: two pin columns + chip body */
+.ibd-columns {
+    height: auto;
+    align: center top;
+    width: auto;
+}
+
+.ibd-col {
+    height: auto;
+    width: auto;
+}
+
+.ibd-chip-body {
+    width: 14;
+    min-height: 6;
+    align: center middle;
+    border: solid $primary-darken-3;
+    margin: 1 1;
+}
+
+.ibd-chip-label {
+    text-align: center;
+    color: $text-muted;
+    width: 12;
+}
+
+/* GPIO pin buttons */
+.ibd-pin-gpio {
+    width: 12;
+    height: 3;
+    margin: 0 0 0 0;
+}
+
+/* Non-configurable pin labels */
+.ibd-pin-power,
+.ibd-pin-uart,
+.ibd-pin-adc {
+    width: 12;
+    height: 3;
+    color: $text-disabled;
+    content-align: center middle;
+    text-style: dim;
+    border: dashed $surface-lighten-1;
+    margin: 0 0 0 0;
+}
+
+.ibd-pin-power {
+    color: $error-darken-1;
+}
+
+.ibd-pin-uart {
+    color: $warning-darken-2;
+}
+
+/* Pin config flyout */
+#gpio-config-placeholder {
+    margin: 2 0;
+}
+
+#gpio-pin-form {
+    height: auto;
+}
+
+#gpio-pin-form.hidden {
+    display: none;
+}
+
+.gpio-pin-header {
+    margin: 0 0 1 0;
+    text-style: bold;
+}
+
+#gpio-pin-boot-warn {
+    height: auto;
+    margin: 0 0 1 0;
+}
+
+#gpio-func-select {
+    width: 100%;
+}
+
+.gpio-hint {
+    color: $text-disabled;
+    height: auto;
+    margin: 0 0 1 0;
+}
+
+.gpio-mqtt-hint {
+    color: $success-darken-2;
+    height: auto;
+    margin: 0 0 1 0;
+}
+
+#gpio-config-btns {
+    height: 3;
+    layout: horizontal;
+    align: left middle;
+    margin: 1 0 0 0;
+}
+
+#config-preview {
+    border: solid $primary-darken-2;
+    margin: 0 0 1 0;
+    padding: 0 1 1 1;
+    height: auto;
+    max-height: 8;
+}
+
+#config-preview-table {
+    height: auto;
+}
+
+#config-send-row {
+    height: 3;
+    layout: horizontal;
+    align: center middle;
+}
+
+#config-backup-row {
+    height: 3;
+    layout: horizontal;
+    align: left middle;
+    padding: 0 1;
+    margin-top: 1;
+    background: $surface-darken-1;
+}
+
+#cfg-restore-select {
+    width: 40;
+}
+
+#cfg-backup-status {
+    width: 1fr;
+    padding: 0 1;
+}
+
+/* ------------------------------------------------------------------ */
+/* MQTT Monitor tab                                                     */
+/* ------------------------------------------------------------------ */
+
+#mqtt-tab {
+    padding: 1;
+    layout: vertical;
+}
+
+#mqtt-connect-row {
+    height: 3;
+    layout: horizontal;
+    align: left middle;
+    margin: 0 0 1 0;
+}
+
+#mqtt-host-input {
+    width: 32;
+}
+
+#mqtt-port-input {
+    width: 12;
+}
+
+#mqtt-sub-topic-input {
+    width: 36;
+}
+
+#mqtt-connect-btn {
+    width: 18;
+}
+
+#mqtt-conn-status {
+    width: 1fr;
+    padding: 0 1;
+}
+
+#mqtt-main {
+    layout: horizontal;
+    height: 1fr;
+    margin: 0 0 1 0;
+}
+
+#mqtt-tree-panel {
+    width: 35;
+    border: solid $primary-darken-2;
+    margin: 0 1 0 0;
+    padding: 0;
+    height: 1fr;
+}
+
+#mqtt-right-panel {
+    width: 1fr;
+    layout: vertical;
+    height: 1fr;
+}
+
+#mqtt-payload-panel {
+    height: 14;
+    border: solid $primary-darken-2;
+    margin: 0 0 1 0;
+    padding: 1;
+}
+
+#mqtt-log-panel {
+    height: 1fr;
+    border: solid $primary-darken-2;
+}
+
+#mqtt-filter-row {
+    height: 3;
+    layout: horizontal;
+    align: left middle;
+}
+
+/* ------------------------------------------------------------------ */
+/* Board Monitor tab                                                    */
+/* ------------------------------------------------------------------ */
+
+#board-tab {
+    padding: 1;
+    layout: vertical;
+    height: 1fr;
+}
+
+#board-controls {
+    height: 3;
+    layout: horizontal;
+    align: left middle;
+    margin: 0 0 1 0;
+}
+
+.board-uptime {
+    margin: 0 2;
+    color: $text-muted;
+}
+
+/* Main split: diagram left + info right */
+#board-main {
+    height: 1fr;
+    layout: horizontal;
+}
+
+#board-left-col {
+    width: 3fr;
+    height: 1fr;
+    padding: 0 1 0 0;
+    overflow-y: auto;
+    overflow-x: auto;
+}
+
+#board-right-col {
+    width: 2fr;
+    height: 1fr;
+    padding: 0 0 0 1;
+    overflow-y: auto;
+    border-left: solid $primary-darken-3;
+}
+
+#board-diagram {
+    border: solid $primary-darken-2;
+    margin: 0 0 1 0;
+    padding: 1;
+    height: auto;
+}
+
+#board-pin-table {
+    height: auto;
+    border: solid $primary-darken-2;
+    margin: 0 0 1 0;
+}
+
+.board-pin-table {
+    height: auto;
+}
+
+/* Info panels in right column */
+.board-info-panel {
+    border: solid $primary-darken-2;
+    margin: 0 0 1 0;
+    padding: 0 1 1 1;
+    height: auto;
+}
+
+#board-device-panel Label,
+#board-wifi-panel Label,
+#board-mqtt-panel Label,
+#board-sensor-panel Label {
+    padding: 0 0 0 1;
+    height: auto;
+}
+
+#board-sensor-values,
+#board-energy-values {
+    padding: 0 0 0 1;
+    height: auto;
+}
+
+/* Output command rows */
+#board-outputs-container {
+    height: auto;
+    padding: 0 0 0 1;
+}
+
+.board-output-row {
+    height: auto;
+    align: left middle;
+    margin: 0 0 1 0;
+    padding: 0;
+}
+
+.board-output-name {
+    width: 1fr;
+    height: auto;
+    padding: 0 1 0 0;
+}
+
+.board-output-btn {
+    min-width: 8;
+    height: 3;
+    margin: 0 1 0 0;
+}
+
+.board-output-pwm-input {
+    width: 16;
+    height: 3;
+    margin: 0 1 0 0;
+}
+
+.board-output-empty {
+    padding: 0 0 0 1;
+    color: $text-muted;
+}
+
+/* ------------------------------------------------------------------ */
+/* Status colors (used in multiple tabs)                                */
+/* ------------------------------------------------------------------ */
+
+.status-online {
+    color: $success;
+}
+
+.status-offline {
+    color: $error;
+}
+
+.status-unknown {
+    color: $text-disabled;
+}
+
+.pin-active {
+    color: $success;
+}
+
+.pin-inactive {
+    color: $text-disabled;
+}
+
+.pin-boot-sensitive {
+    color: $warning;
+}
+
+/* ------------------------------------------------------------------ */
+/* Rules Tab                                                            */
+/* ------------------------------------------------------------------ */
+
+#rules-tab {
+    height: 1fr;
+    padding: 0 1;
+}
+
+#rules-control-row {
+    height: 3;
+    margin: 1 0;
+    align: left middle;
+}
+
+#rules-control-row Label {
+    height: 3;
+    content-align: left middle;
+    padding: 0 1;
+}
+
+#rules-rule-select {
+    width: 14;
+    margin-right: 1;
+}
+
+#rules-add-btn {
+    width: 22;
+    margin-right: 1;
+}
+
+#rules-clear-btn {
+    width: 16;
+    margin-right: 1;
+}
+
+#rules-refresh-gpio-btn {
+    width: 18;
+    margin-right: 1;
+}
+
+#rules-fetch-btn {
+    width: 26;
+}
+
+#rules-gpio-hint {
+    height: 1;
+    color: $text-muted;
+    margin-bottom: 1;
+}
+
+#rules-cards-container {
+    height: 1fr;
+    border: solid $primary-darken-2;
+    padding: 0 1;
+}
+
+.rule-card {
+    border: solid $primary-darken-1;
+    margin: 1 0;
+    padding: 0 1 1 1;
+    height: auto;
+    background: $surface;
+}
+
+.rule-card:focus-within {
+    border: solid $accent;
+}
+
+.rule-card-header {
+    height: 3;
+    align: left middle;
+}
+
+.rule-card-title {
+    width: 1fr;
+    height: 3;
+    content-align: left middle;
+    color: $accent;
+    text-style: bold;
+}
+
+.rule-del-btn {
+    width: 12;
+    margin-left: 1;
+}
+
+.rule-row {
+    height: 3;
+    margin-top: 1;
+    align: left middle;
+}
+
+.rule-row-label {
+    width: 14;
+    height: 3;
+    content-align: right middle;
+    padding: 0 1;
+    color: $text-muted;
+}
+
+.rule-trigger-select {
+    width: 30;
+    margin-right: 1;
+}
+
+.rule-op-select {
+    width: 8;
+    margin-right: 1;
+}
+
+.rule-val-input {
+    width: 14;
+}
+
+.rule-val-select {
+    width: 14;
+}
+
+/* Generic hidden helper used in Rules tab */
+.hidden {
+    display: none;
+}
+
+.rule-action-select {
+    width: 26;
+    margin-right: 1;
+}
+
+.rule-card-footer {
+    height: 3;
+    margin-top: 1;
+    align: right middle;
+}
+
+.rule-else-toggle-btn {
+    width: 30;
+}
+
+#rules-preview-panel {
+    height: auto;
+    margin-top: 1;
+}
+
+.rules-preview-textarea {
+    height: 8;
+    border: solid $primary-darken-2;
+}
+
+#rules-send-row {
+    height: 3;
+    margin-top: 1;
+    align: left middle;
+}
+
+#rules-send-serial-btn {
+    width: 24;
+    margin-right: 2;
+}
+
+#rules-send-status {
+    height: 3;
+    content-align: left middle;
+}
+
+#rules-fetched-panel {
+    margin-top: 1;
+    height: auto;
+}
+
+#rules-fetched-header {
+    height: 3;
+    align: left middle;
+}
+
+#rules-fetched-title {
+    width: 1fr;
+    height: 3;
+    content-align: left middle;
+    background: $primary-darken-2;
+    color: $text;
+    padding: 0 1;
+}
+
+.rules-edit-fetched-btn {
+    width: 18;
+    margin-left: 1;
+}

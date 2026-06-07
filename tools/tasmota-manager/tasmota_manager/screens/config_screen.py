@@ -113,7 +113,7 @@ def parse_fulltopic_from_mqt_lines(lines: list[str], device_topic: str) -> Optio
 
 
 def parse_status5(lines: list[str]) -> dict:
-    """Parse Status 5 (StatusNET) – WiFi SSID, IP (no password)."""
+    """Parse Status 5 (StatusNET) – WiFi SSID, IP, MAC address."""
     result: dict = {}
     for line in lines:
         if "StatusNET" not in line:
@@ -128,6 +128,9 @@ def parse_status5(lines: list[str]) -> dict:
             result["ip"] = net["IPAddress"]
         if "RSSI" in net:
             result["rssi"] = net["RSSI"]
+        if "Mac" in net:
+            # Strip colons → "AABBCCDDEEFF", then take last 8 chars as device ID
+            result["mac"] = net["Mac"].replace(":", "").upper()
     return result
 
 
@@ -297,6 +300,7 @@ from tasmota_manager.board_layouts import (
 from tasmota_manager.config_builder import (
     GPIO_FUNCTION_TYPES,
     GPIO_TYPE_BY_ID,
+    PROFILES_DIR,
     DeviceConfig,
     GpioType,
     MqttConfig,
@@ -319,6 +323,7 @@ from tasmota_manager.groups_manager import (
     list_regions,
     list_users,
     sanitize_id,
+    save_device_to_registry,
     update_region,
     update_user,
 )
@@ -329,6 +334,38 @@ _GPIO_SELECT_OPTIONS_CLEAN = [
     (lbl, val) for lbl, val in _GPIO_SELECT_OPTIONS
     if not val.startswith("__sep_")
 ]
+
+
+# ---------------------------------------------------------------------------
+# WiFi jelszó memória
+# ---------------------------------------------------------------------------
+
+WIFI_PASS_FILE = PROFILES_DIR / "wifi_passwords.json"
+
+
+def load_wifi_passwords() -> dict[str, str]:
+    """Return stored {ssid: password} mapping."""
+    try:
+        if WIFI_PASS_FILE.exists():
+            return json.loads(WIFI_PASS_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return {}
+
+
+def save_wifi_password(ssid: str, password: str) -> None:
+    """Persist an SSID→password pair for future auto-fill."""
+    if not ssid or not password:
+        return
+    try:
+        PROFILES_DIR.mkdir(exist_ok=True)
+        data = load_wifi_passwords()
+        data[ssid] = password
+        WIFI_PASS_FILE.write_text(
+            json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+    except Exception:
+        pass
 
 
 class InteractiveBoardDiagram(Widget):
@@ -558,12 +595,14 @@ class ConfigTab(TabPane):
                     with Horizontal(classes="row"):
                         yield Label("Jelszó 1:", classes="label")
                         yield Input(placeholder="••••••••", password=True, id="cfg-pass1")
+                        yield Button("👁", id="reveal-pass1", classes="reveal-btn")
                     with Horizontal(classes="row"):
                         yield Label("SSID 2:", classes="label")
                         yield Input(placeholder="Tartalék (opcionális)", id="cfg-ssid2")
                     with Horizontal(classes="row"):
                         yield Label("Jelszó 2:", classes="label")
                         yield Input(placeholder="••••••••", password=True, id="cfg-pass2")
+                        yield Button("👁", id="reveal-pass2", classes="reveal-btn")
 
                 with Vertical(id="mqtt-panel"):
                     yield Static("MQTT", classes="section-title")
@@ -579,6 +618,7 @@ class ConfigTab(TabPane):
                     with Horizontal(classes="row"):
                         yield Label("Jelszó:", classes="label")
                         yield Input(placeholder="(üresen hagyható)", password=True, id="cfg-mqtt-pass")
+                        yield Button("👁", id="reveal-mqtt-pass", classes="reveal-btn")
                     with Horizontal(classes="row"):
                         yield Label("Eszköz azonosító:", classes="label")
                         yield Input(placeholder="pl. AABBCCDD (alapért. MAC)", id="cfg-mqtt-topic")
@@ -735,6 +775,14 @@ class ConfigTab(TabPane):
             self.run_worker(self._do_wifi_scan(), name="wifi_scan")
         elif bid in ("wifi-pick-ssid1", "wifi-pick-ssid2"):
             self._pick_wifi_to_input(bid)
+        elif bid in ("reveal-pass1", "reveal-pass2", "reveal-mqtt-pass"):
+            pass_id_map = {
+                "reveal-pass1":    "#cfg-pass1",
+                "reveal-pass2":    "#cfg-pass2",
+                "reveal-mqtt-pass": "#cfg-mqtt-pass",
+            }
+            inp: Input = self.query_one(pass_id_map[bid], Input)
+            inp.password = not inp.password
         elif bid.startswith("cfgpin_"):
             gpio_num = int(bid.split("_", 1)[1])
             self._show_pin_config(gpio_num)
@@ -828,7 +876,11 @@ class ConfigTab(TabPane):
                 event.input.value = clean
             return  # preview not relevant for these fields
 
-        if inp_id == "cfg-mqtt-topic":
+        if inp_id in ("cfg-ssid1", "cfg-ssid2"):
+            pass_id = "#cfg-pass1" if inp_id == "cfg-ssid1" else "#cfg-pass2"
+            self._autofill_wifi_password(event.value.strip(), pass_id)
+
+        elif inp_id == "cfg-mqtt-topic":
             # Also sanitize the device topic
             raw = event.value
             clean = sanitize_id(raw)
@@ -1536,7 +1588,7 @@ class ConfigTab(TabPane):
         except Exception as exc:
             self.notify(f"Mentési hiba: {exc}", severity="error")
 
-    def _populate_form(self, cfg: DeviceConfig) -> None:
+    def _populate_form(self, cfg: DeviceConfig, restore_user_region: bool = False) -> None:
         def _set(widget_id: str, value: str) -> None:
             try:
                 inp: Input = self.query_one(widget_id)
@@ -1562,12 +1614,12 @@ class ConfigTab(TabPane):
         except Exception:
             pass
 
-        # User / Region dropdowns (user-first)
-        if cfg.user_id:
+        # User / Region dropdowns: only restore when explicitly requested
+        # (e.g. device fetch) – NOT when loading a profile (deployment-specific data)
+        if restore_user_region and cfg.user_id:
             try:
                 user_sel: Select = self.query_one("#cfg-user-select")
                 user_sel.value = cfg.user_id
-                # Populate region dropdown for this user
                 self._on_main_user_changed(cfg.user_id)
                 if cfg.region_id:
                     self.query_one("#cfg-region-select", Select).value = cfg.region_id
@@ -1670,14 +1722,15 @@ class ConfigTab(TabPane):
                     pass
 
             # --- Parse Ssid1 / Ssid2 (configured networks) -------------
+            s5 = parse_status5(lines)
             ssids = parse_ssids(lines)
             # Ssid1/Ssid2 responses take priority over Status 5 (active only)
             if ssids.get("ssid1"):
                 self._set_input("#cfg-ssid1", ssids["ssid1"])
                 filled.append("WiFi SSID1")
-            elif parse_status5(lines).get("ssid1"):
+            elif s5.get("ssid1"):
                 # Fallback: active SSID from Status 5
-                self._set_input("#cfg-ssid1", parse_status5(lines)["ssid1"])
+                self._set_input("#cfg-ssid1", s5["ssid1"])
                 filled.append("WiFi SSID1 (aktív)")
             if "ssid2" in ssids:
                 self._set_input("#cfg-ssid2", ssids["ssid2"])
@@ -1685,6 +1738,17 @@ class ConfigTab(TabPane):
                     filled.append("WiFi SSID2")
                 # empty string is fine – means no backup network configured
             skipped.append("WiFi jelszavak")   # never returned by Tasmota
+
+            # --- MAC address → auto-fill device topic if empty ---------
+            device_mac = s5.get("mac", "")
+            if device_mac:
+                try:
+                    existing_topic = self.query_one("#cfg-mqtt-topic", Input).value.strip()
+                    if not existing_topic:
+                        self._set_input("#cfg-mqtt-topic", device_mac)
+                        filled.append(f"Eszköz ID (MAC): {device_mac}")
+                except Exception:
+                    pass
 
             # --- Parse Status 6 (MQTT) ---------------------------------
             s6 = parse_status6(lines)
@@ -1865,6 +1929,54 @@ class ConfigTab(TabPane):
         finally:
             scan_btn.disabled = False
 
+    def _autofill_wifi_password(self, ssid: str, pass_input_id: str) -> None:
+        """Fill password field from stored wifi_passwords.json if SSID is known."""
+        if not ssid:
+            return
+        try:
+            pass_inp: Input = self.query_one(pass_input_id, Input)
+            if pass_inp.value:
+                return  # don't overwrite user-entered password
+            known = load_wifi_passwords()
+            if ssid in known:
+                pass_inp.value = known[ssid]
+        except Exception:
+            pass
+
+    def _save_wifi_passwords_from_form(self) -> None:
+        """Persist SSID→password pairs from current form values."""
+        try:
+            ssid1 = self.query_one("#cfg-ssid1", Input).value.strip()
+            pass1 = self.query_one("#cfg-pass1", Input).value.strip()
+            ssid2 = self.query_one("#cfg-ssid2", Input).value.strip()
+            pass2 = self.query_one("#cfg-pass2", Input).value.strip()
+            if ssid1 and pass1:
+                save_wifi_password(ssid1, pass1)
+            if ssid2 and pass2:
+                save_wifi_password(ssid2, pass2)
+        except Exception:
+            pass
+
+    def _save_to_device_registry(self) -> None:
+        """Persist configured device into device_registry.json."""
+        try:
+            u = self.query_one("#cfg-user-select", Select).value
+            r = self.query_one("#cfg-region-select", Select).value
+            d = self.query_one("#cfg-mqtt-topic", Input).value.strip()
+            user_id   = u if isinstance(u, str) and u else ""
+            region_id = r if isinstance(r, str) and r else ""
+            if user_id and region_id and d:
+                board_sel = self.query_one("#cfg-module", Select)
+                board_type = str(board_sel.value) if board_sel.value is not Select.BLANK else ""
+                save_device_to_registry(
+                    user_id=user_id,
+                    region_id=region_id,
+                    device_id=d,
+                    board_type=board_type,
+                )
+        except Exception:
+            pass
+
     def _pick_wifi_to_input(self, btn_id: str) -> None:
         """Copy the selected scanned SSID into the SSID1 or SSID2 input."""
         scan_sel: Select = self.query_one("#wifi-scan-select")
@@ -1874,6 +1986,9 @@ class ConfigTab(TabPane):
         ssid = str(scan_sel.value)
         target = "#cfg-ssid1" if btn_id == "wifi-pick-ssid1" else "#cfg-ssid2"
         self._set_input(target, ssid)
+        # Auto-fill password if we have it stored
+        pass_target = "#cfg-pass1" if btn_id == "wifi-pick-ssid1" else "#cfg-pass2"
+        self._autofill_wifi_password(ssid, pass_target)
         inp: Input = self.query_one(target)
         inp.focus()
         self.notify(
@@ -1888,7 +2003,28 @@ class ConfigTab(TabPane):
         except Exception:
             pass
 
+    def _validate_send_requirements(self) -> bool:
+        """Check that user, region and device ID are all set before sending config."""
+        try:
+            u = self.query_one("#cfg-user-select", Select).value
+            r = self.query_one("#cfg-region-select", Select).value
+            d = self.query_one("#cfg-mqtt-topic", Input).value.strip()
+            if not u or u is Select.BLANK or not isinstance(u, str):
+                self.notify("Küldés előtt válassz usert!", severity="error")
+                return False
+            if not r or r is Select.BLANK or not isinstance(r, str):
+                self.notify("Küldés előtt válassz régiót!", severity="error")
+                return False
+            if not d:
+                self.notify("Küldés előtt add meg az eszköz azonosítót (Topic)!", severity="error")
+                return False
+        except Exception:
+            pass
+        return True
+
     def _send_via_serial(self) -> None:
+        if not self._validate_send_requirements():
+            return
         app = self.app  # type: ignore[attr-defined]
         serial_bridge = app.serial_bridge
         if not serial_bridge.is_connected and not app.http_bridge.is_connected:
@@ -1988,10 +2124,28 @@ class ConfigTab(TabPane):
                 severity="information",
             )
             self.app.sync_gpio_to_board()  # type: ignore[attr-defined]
+            self._save_wifi_passwords_from_form()
+            self._save_to_device_registry()
+            # Trigger auto HTTP+MQTT connect after device reboots
+            try:
+                cfg = self._build_config()
+                from tasmota_manager.groups_manager import build_mqtt_subscribe_topic
+                sub = build_mqtt_subscribe_topic(cfg.region_id, cfg.user_id, cfg.mqtt.topic or cfg.topic)
+                self.app.trigger_auto_connect(  # type: ignore[attr-defined]
+                    mqtt_host=cfg.mqtt.host,
+                    mqtt_port=cfg.mqtt.port,
+                    mqtt_user=cfg.mqtt.user,
+                    mqtt_pass=cfg.mqtt.password,
+                    mqtt_subscribe=sub or "#",
+                )
+            except Exception:
+                pass
         except Exception as exc:
             self.notify(f"Hiba: {exc}", severity="error")
 
     def _send_via_mqtt(self) -> None:
+        if not self._validate_send_requirements():
+            return
         mqtt_mgr = self.app.mqtt_manager  # type: ignore[attr-defined]
         if not mqtt_mgr.connected:
             self.notify("Nincs MQTT kapcsolat!", severity="warning")
@@ -2001,14 +2155,26 @@ class ConfigTab(TabPane):
         if not topic:
             self.notify("Nincs topic megadva!", severity="warning")
             return
+        user_id  = cfg.user_id  or ""
+        region_id = cfg.region_id or ""
         for cmd, val in cfg.to_tasmota_commands():
             if cmd == "Restart":
                 continue
-            mqtt_topic = f"cmnd/{topic}/{cmd}"
+            if user_id and region_id:
+                mqtt_topic = f"{user_id}/{region_id}/{topic}/cmnd/{cmd}"
+            else:
+                mqtt_topic = f"cmnd/{topic}/{cmd}"
             mqtt_mgr.publish(mqtt_topic, val)
         self.app.sync_gpio_to_board()  # type: ignore[attr-defined]
-        mqtt_mgr.publish(f"cmnd/{topic}/Restart", "1")
-        self.notify(f"Konfig elküldve MQTT-n: cmnd/{topic}/…", severity="information")
+        restart_topic = (
+            f"{user_id}/{region_id}/{topic}/cmnd/Restart"
+            if user_id and region_id
+            else f"cmnd/{topic}/Restart"
+        )
+        mqtt_mgr.publish(restart_topic, "1")
+        self._save_wifi_passwords_from_form()
+        self._save_to_device_registry()
+        self.notify(f"Konfig elküldve MQTT-n: {restart_topic.rsplit('/Restart')[0]}/…", severity="information")
 
     # ------------------------------------------------------------------
     # HTTP backup / restore

@@ -1,0 +1,9 @@
+{
+	"nodes":[
+		{"id":"baea931a1557b78a","x":-240,"y":-60,"width":250,"height":60,"type":"text","text":"tasmota esp32"},
+		{"id":"6e0fa36857f22a6a","x":240,"y":-320,"width":660,"height":490,"type":"file","file":"docs/tasmota-manager.md"}
+	],
+	"edges":[
+		{"id":"82e3911dddda6f3d","fromNode":"baea931a1557b78a","fromSide":"right","toNode":"6e0fa36857f22a6a","toSide":"left"}
+	]
+}

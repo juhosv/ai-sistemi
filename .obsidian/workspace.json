@@ -1,0 +1,233 @@
+{
+  "main": {
+    "id": "575c46bc863d8df3",
+    "type": "split",
+    "children": [
+      {
+        "id": "1808005ea7dbb24a",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "5d41f753134326a7",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "docs/termek-otletek.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "termek-otletek"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "a38bd1817e6323a5",
+    "type": "split",
+    "children": [
+      {
+        "id": "d234847598c4a549",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "11c09da68f36ec94",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical",
+                "autoReveal": false
+              },
+              "icon": "lucide-folder-closed",
+              "title": "Fájlkezelő"
+            }
+          },
+          {
+            "id": "bac510768f37e189",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "Keresés"
+            }
+          },
+          {
+            "id": "62416d2d96e7a6c1",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {},
+              "icon": "lucide-bookmark",
+              "title": "Könyvjelzők"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300
+  },
+  "right": {
+    "id": "b5559ba2aded0038",
+    "type": "split",
+    "children": [
+      {
+        "id": "e1416755157b9497",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "e69c0a7a77a8e272",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "file": "docs/projekt-ventilator.md",
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "projekt-ventilator visszahivatkozásai"
+            }
+          },
+          {
+            "id": "f7d6bb1faed8b48d",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "file": "docs/projekt-ventilator.md",
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "Kimenő kapcsolatok a(z) projekt-ventilator jegyzetből"
+            }
+          },
+          {
+            "id": "236b04e65d58f02f",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "Címkék"
+            }
+          },
+          {
+            "id": "41f752c88c9f8c09",
+            "type": "leaf",
+            "state": {
+              "type": "all-properties",
+              "state": {
+                "sortOrder": "frequency",
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-archive",
+              "title": "Minden tulajdonság"
+            }
+          },
+          {
+            "id": "ff3f3e5039bdadb2",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "file": "docs/projekt-ventilator.md",
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "projekt-ventilator vázlata"
+            }
+          },
+          {
+            "id": "618066f1d486c738",
+            "type": "leaf",
+            "state": {
+              "type": "git-view",
+              "state": {},
+              "icon": "git-pull-request",
+              "title": "Source Control"
+            }
+          }
+        ],
+        "currentTab": 5
+      }
+    ],
+    "direction": "horizontal",
+    "width": 514.5
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "switcher:Gyors váltó megnyitása": false,
+      "graph:Gráf nézet megnyitása": false,
+      "canvas:Új vászon létrehozása": false,
+      "daily-notes:Mai jegyzet megnyitása": false,
+      "templates:Sablon beszúrása": false,
+      "command-palette:Parancspaletta megnyitása": false,
+      "bases:Új bázis létrehozása": false,
+      "obsidian-git:Open Git source control": false,
+      "obsidian-kanban:Create new board": false
+    }
+  },
+  "active": "5d41f753134326a7",
+  "lastOpenFiles": [
+    "docs/projekt-ventilator.md",
+    "docs/hw-kijelzok.md",
+    "docs/hw-d1mini-tasmota.md",
+    "docs/user-guide/debug_test.pdf",
+    "docs/user-guide/debug_pdf.py",
+    "docs/user-guide/test_font.pdf",
+    "docs/user-guide/test_font.py",
+    "docs/user-guide/screenshots/06-rules.png",
+    "docs/user-guide/screenshots/05-board-monitor.png",
+    "docs/user-guide/screenshots/04-mqtt-monitor.png",
+    "docs/user-guide/screenshots/03-config-gpio.png",
+    "docs/user-guide/screenshots/03-config-alap.png",
+    "docs/user-guide/screenshots/02-kapcsolat-serial.png",
+    "docs/user-guide/screenshots/01-flash-tab.png",
+    "docs/user-guide/screenshots/00-fokepernyő.png",
+    "docs/user-guide/generate_screenshots.py",
+    "docs/user-guide/SmartBlue-TasmotaManager-UserGuide.pdf",
+    "docs/user-guide/build_pdf.py",
+    "release/SmartBlue-TasmotaManager/_internal/tasmota_manager/http_comm.py",
+    "docs/user-guide/Untitled",
+    "docs/user-guide/README.md",
+    "docs/user-guide/screenshots/HOW-TO-UPDATE.md",
+    "docs/user-guide/screenshots",
+    "docs/projekt kanban.md",
+    "docs/Untitled Kanban.md",
+    "docs/PROJECT.md",
+    "docs/eszkoz-szenzorok.md",
+    "Névtelen.canvas",
+    "2026-06-07.md",
+    "docs/tasmota-manager.md",
+    "docs/kommunikacio.md",
+    "docs/dontes-elokeszito.md"
+  ]
+}

@@ -12,26 +12,68 @@ from typing import Callable, Optional
 import paho.mqtt.client as mqtt
 
 
+_KNOWN_PREFIXES = frozenset({"tele", "stat", "cmnd"})
+
+
 @dataclass
 class MqttMessage:
+    """Single received MQTT message.
+
+    Supports both legacy flat topics (tele/DEVICE/CMD) and grouped topics
+    (user/region/DEVICE/tele/CMD) produced by Tasmota when a custom FullTopic
+    containing user/region segments is configured.
+    """
+
     topic: str
     payload_raw: str
     payload_json: object        # parsed JSON or raw string
     timestamp: datetime = field(default_factory=datetime.now)
 
     @property
+    def _is_grouped(self) -> bool:
+        """Return True for user/region/device/prefix/cmd shaped topics."""
+        parts = self.topic.split("/")
+        return (
+            len(parts) >= 4
+            and bool(parts[0])
+            and parts[0].lower() not in _KNOWN_PREFIXES
+        )
+
+    @property
     def prefix(self) -> str:
-        return self.topic.split("/")[0] if "/" in self.topic else ""
+        """MQTT prefix: tele / stat / cmnd."""
+        parts = self.topic.split("/")
+        if self._is_grouped:
+            return parts[3] if len(parts) > 3 else ""
+        return parts[0] if parts else ""
 
     @property
     def device_topic(self) -> str:
+        """Device identifier (the Tasmota Topic value)."""
         parts = self.topic.split("/")
+        if self._is_grouped:
+            return parts[2] if len(parts) > 2 else ""
         return parts[1] if len(parts) > 1 else ""
 
     @property
     def command(self) -> str:
+        """Command / sensor name (last path segment(s))."""
         parts = self.topic.split("/")
-        return parts[2] if len(parts) > 2 else ""
+        if self._is_grouped:
+            return "/".join(parts[4:]) if len(parts) > 4 else ""
+        return "/".join(parts[2:]) if len(parts) > 2 else ""
+
+    @property
+    def user_id(self) -> str:
+        """User segment for grouped topics; empty string for legacy format."""
+        parts = self.topic.split("/")
+        return parts[0] if self._is_grouped else ""
+
+    @property
+    def region_id(self) -> str:
+        """Region segment for grouped topics; empty string for legacy format."""
+        parts = self.topic.split("/")
+        return parts[1] if self._is_grouped and len(parts) > 1 else ""
 
 
 @dataclass
@@ -164,8 +206,8 @@ class MQTTManager:
     def get_known_devices(self) -> list[str]:
         with self._lock:
             devices: set[str] = set()
-            for topic in self.last_messages:
-                parts = topic.split("/")
-                if len(parts) >= 2:
-                    devices.add(parts[1])
+            for msg in self.last_messages.values():
+                dt = msg.device_topic
+                if dt:
+                    devices.add(dt)
             return sorted(devices)
