@@ -8,8 +8,18 @@ Ez a dokumentum összefoglalja a nyitott döntési pontokat és a javasolt köve
 
 ## Döntési mátrix – kommunikáció
 
-| Kérdés | Opció A | Opció B | Opció C |
-|--------|---------|---------|---------|
+| Kérdés | WiFi only | WiFi + ext. antenna | GSM 4G | LoRa |
+|--------|-----------|---------------------|--------|------|
+| Hardverköltség | Alacsony | Alacsony | Magas | Közepes |
+| Üzemeltetési rugalmasság | Alacsony | Alacsony | Magas | Közepes |
+| Terepi alkalmasság | Korlátozott | Korlátozott | Kiváló | Kiváló (saját GW) |
+| Fejlesztési komplexitás | Alacsony | Alacsony | Közepes | Magas |
+| Sávszélesség / OTA | Nagy | Nagy | Közepes | Nagyon korlátozott |
+| **Pilot fázis javasolt?** | **Igen (beltéri)** | Ha gyenge WiFi jel | Következő fázisban | Feltérképezendő |
+
+> Részletes elemzés: [kommunikacio.md](kommunikacio.md) – WiFi, külső antenna, GSM, LoRa összehasonlítás
+
+--------|---------|---------|---------|
 | Kommunikáció | WiFi only | GSM 4G only | Hibrid (WiFi + GSM) |
 | Hardverköltség | Alacsony | Magas | Legmagasabb |
 | Üzemeltetési rugalmasság | Alacsony | Magas | Maximális |
