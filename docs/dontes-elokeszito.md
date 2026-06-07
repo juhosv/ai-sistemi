@@ -76,7 +76,7 @@ EMQX auth:    Még nem döntött                                  [nyitott]
 - [ ] **MVP scope meghatározása** – mi kell az első pilot induláshoz minimálisan
 - [ ] **GDPR / adatvédelem** – szerbiai vs EU adattárolás jogi vizsgálata szükséges
 - [ ] **EMQX autentikáció** – eszköz azonosítási módszer kiválasztása
-- [ ] **Mobilalkalmazás döntés** – web UI, PWA vagy natív?
+- [ ] **Mobilalkalmazás / provisioning döntés** – web UI, PWA vagy natív? Bluetooth/NFC alapú telepítési segéd vizsgálva (lásd `termek-otletek.md` – Bluetooth/NFC provisioning fejezet): rövidtávon Tasmota AP mód elegendő; középtávon webes konfigurátor + QR/NFC tag javasolt
 - [ ] **Dashboard döntés** – Grafana, egyedi, vagy csak riasztás?
 - [ ] **GitHub migráció** – projekt repo létrehozása, Obsidian Git plugin, csapat hozzáférés (Sogi, Robi, Alfréd)
 - [ ] **Projektmenedzsment eszköz** – kiválasztás és beállítás

@@ -140,6 +140,96 @@ SmartBlue szerver → InfluxDB → dashboard
 
 ---
 
+## 📱 Telepítési segéd – Bluetooth / NFC alapú provisioning
+
+> Ötlet: az első WiFi-konfiguráció elvégzése helyszínen, USB-kábel nélkül, telefon segítségével.
+
+### A probléma
+
+Az ESP32 + Tasmota eszköz telepítésekor valakinek fizikailag ott kell lennie egy laptoppal (Tasmota Manager) vagy soros kábellel. Bluetooth vagy NFC segíthetne a „last-mile" beüzemelésben: a szerelő telefonjával azonnal beállítja a WiFi-t, MQTT-t.
+
+---
+
+### 1. lehetőség – Tasmota AP mód (már most működik, app sem kell)
+
+Tasmota első induláskor saját WiFi AP-t nyit (`tasmota-XXXX`, 192.168.4.1). A szerelő telefonjával csatlakozik ehhez az AP-hoz, böngészőben beállítja a WiFi + MQTT adatokat. **Nincs szükség extra hardverre vagy appra.** Ez az azonnal használható megoldás.
+
+**Korlát:** a webes UI alap Tasmota, nem SmartBlue-specifikus (nincs user/region/device_id mező).
+
+---
+
+### 2. lehetőség – NFC tag az eszközön
+
+Az eszközre egy programozható NFC tag kerül. A telepítő telefona az NFC tagot megtapogatva kap egy URL-t vagy konfigurációs adatot.
+
+#### NFC tag tartalmak (alternatívák)
+
+| Tartalom | Leírás | Ami kell hozzá |
+|----------|--------|----------------|
+| URL → SmartBlue webes konfigurátor | A tag egy `https://smartblue.io/setup?device=AABBCC` URL-t tartalmaz → telefon böngészőben megnyílik a konfigurációs oldal | Webes konfigurátor backend |
+| URL → Tasmota AP webes UI | `http://192.168.4.1` (csak akkor, ha a telefon csatlakozva van az eszköz AP-jához) | Semmi extra |
+| NDEF szöveg → device ID + típus | Tag tartalmazza a MAC-et és board típust → app automatikusan kitölti a regisztrációs mezőket | SmartBlue app vagy PWA |
+
+#### Hardver igény az NFC-hez
+
+- Passzív NFC tag (pl. NTAG213, ~5 Ft/db) az eszközre ragasztva
+- Nincs szükség NFC-olvasóra az ESP32-n (a telefon olvassa a tag-et)
+- Az ESP32-nek opcionálisan lehet aktív NFC olvasója (PN532 modul), de ez nem feltétlenül szükséges
+
+---
+
+### 3. lehetőség – Bluetooth (BLE) provisioning
+
+#### ESP-Touch / SmartConfig (WiFi provisioning BLE-vel, Tasmota támogatja)
+
+Tasmota tartalmaz `SmartConfig` (`SetOption65`) módot: telefon BLE-n vagy broadcast csomagokon keresztül küldi a WiFi SSID-t és jelszót az ESP32-nek, **anélkül hogy előbb csatlakozna az AP-hoz**. Ehhez léteznek kész mobilappok (pl. Espressif ESPTouch app, Android + iOS).
+
+**Korlát:** csak WiFi adatokat küld, MQTT + user/region + device_id nem konfigurálható így.
+
+#### Dedikált SmartBlue BLE konfigurátor app
+
+Egyedi mobilapp (React Native / Flutter vagy PWA), amely:
+1. BLE-n csatlakozik az ESP32-re (egyedi Tasmota build vagy firmware extension szükséges)
+2. Elküldi a teljes SmartBlue konfigurációt (WiFi + MQTT + user/region/device_id)
+3. Regisztrálja az eszközt a SmartBlue backend-ben
+
+**Fejlesztési igény:** jelentős (egyedi firmware + mobilapp), de prémium telepítési élményt ad.
+
+---
+
+### 4. lehetőség – QR kód a webes konfigurátorhoz
+
+Az eszközre nyomtatott QR kód → SmartBlue webes konfigurátor előre kitöltve a device MAC-del. Nem igényel extra hardvert, csak a webes konfigurátor backend-et. Mobilon is működik.
+
+---
+
+### Összehasonlítás
+
+| Megoldás | Fejlesztési igény | Hardver | Felhasználói élmény | Javaslat |
+|----------|-------------------|---------|---------------------|----------|
+| Tasmota AP mód | Semmi | Semmi | Közepes (kézi lépések) | **Azonnal bevezethető** |
+| NFC tag (URL) | Webes konfigurátor kell | Passzív NFC tag (~5 Ft) | Jó (tapintás → böngésző) | **2. prioritás** |
+| QR kód | Webes konfigurátor kell | Semmi (nyomtatás) | Jó | **2. prioritás** |
+| BLE SmartConfig | Minimális | Semmi | Közepes | Csak WiFi-t old meg |
+| BLE + egyedi app | Nagy (firmware + app) | Semmi | Prémium | Jövőbeli lehetőség |
+
+### Javasolt irány
+
+**Rövidtávon:** a Tasmota AP mód elegendő a pilot fázishoz.
+
+**Középtávon:** webes konfigurátor (SmartBlue webUI) + QR kód / NFC tag kombinációja. A webUI egyben a mobil telepítési eszköz is – nincs szükség natív appra. PWA formában offline is működhet.
+
+**Hosszútávon:** ha a telepítők száma nő, BLE-alapú provisioning app megfontolandó a prémium UX-ért.
+
+### Nyitott kérdések
+
+- [ ] Lesz-e dedikált SmartBlue webes konfigurátor (a Tasmota Manager TUI webes változata)?
+- [ ] Az NFC tag tartalmát az gyártás/programozás során töltik fel, vagy helyszínen?
+- [ ] Szükséges-e offline provisioning (helyszínen nincs internet)?
+- [ ] Melyik szerepkör végzi a telepítést – Robi/Alfréd szakemberek vagy az ügyfél?
+
+---
+
 ## További termék ötletek (jövőre)
 
 | Ötlet | Leírás |
