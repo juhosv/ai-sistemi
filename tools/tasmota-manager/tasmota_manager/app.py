@@ -267,10 +267,10 @@ class TasmoApp(App):
                     pass
 
         elif sel_id == "board-type-select":
-            # Board changed → update Config
+            # Board changed → update Config silently (must not reset GPIO assignments)
             try:
-                cfg_sel: Select = self.query_one("#cfg-module")
-                if cfg_sel.value != board_name:
-                    cfg_sel.value = board_name
+                from tasmota_manager.screens.config_screen import ConfigTab
+                cfg_tab: ConfigTab = self.query_one(ConfigTab)
+                cfg_tab.set_module_silent(board_name)
             except Exception:
                 pass

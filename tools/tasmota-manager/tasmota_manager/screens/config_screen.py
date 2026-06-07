@@ -664,6 +664,9 @@ class ConfigTab(TabPane):
         self._gpio_assignments = {}
         self._selected_gpio = None
         self._diagram_build_version = 0
+        # When True, cfg-module changes are programmatic (fetch/sync) and must
+        # NOT trigger _apply_module_defaults (which would wipe device GPIO data).
+        self._suppress_module_defaults: bool = False
         table: DataTable = self.query_one("#config-preview-table")
         table.add_columns("Parancs", "Érték")
         self._refresh_profiles()
@@ -783,7 +786,8 @@ class ConfigTab(TabPane):
     def on_select_changed(self, event: Select.Changed) -> None:
         sid = event.select.id or ""
         if sid == "cfg-module":
-            self._apply_module_defaults(str(event.value))
+            if not self._suppress_module_defaults:
+                self._apply_module_defaults(str(event.value))
             self._rebuild_board_diagram()
             self._update_preview()
         elif sid == "gpio-func-select":
@@ -1132,6 +1136,26 @@ class ConfigTab(TabPane):
         except Exception:
             pass
         return None
+
+    def set_module_silent(self, board_name: str) -> None:
+        """Update cfg-module without triggering _apply_module_defaults.
+
+        Called by the app-level cross-tab sync (board-type-select → cfg-module)
+        so that Board tab auto-poll does not wipe Config tab GPIO assignments.
+        """
+        try:
+            sel: Select = self.query_one("#cfg-module", Select)
+            if sel.value == board_name:
+                return
+            self._suppress_module_defaults = True
+            sel.value = board_name
+            # Clear the flag after Textual's reactive cycle processes the change
+            self.call_after_refresh(self._clear_suppress_flag)
+        except Exception:
+            self._suppress_module_defaults = False
+
+    def _clear_suppress_flag(self) -> None:
+        self._suppress_module_defaults = False
 
     def _apply_module_defaults(self, module_name: str) -> None:
         """Replace _gpio_assignments with the factory defaults for *module_name*.
@@ -1636,8 +1660,10 @@ class ConfigTab(TabPane):
                     mod_id = int(s1["module_type"])
                     board_name = TASMOTA_MODULE_TO_BOARD.get(mod_id)
                     if board_name:
+                        self._suppress_module_defaults = True
                         sel: Select = self.query_one("#cfg-module")
                         sel.value = board_name
+                        self.call_after_refresh(self._clear_suppress_flag)
                         filled.append(f"Modul → {board_name}")
                 except Exception:
                     pass
@@ -1699,10 +1725,12 @@ class ConfigTab(TabPane):
                 from tasmota_manager.board_layouts import BOARD_BY_NAME
                 if mem1_value in BOARD_BY_NAME:
                     try:
+                        self._suppress_module_defaults = True
                         self.query_one("#cfg-module", Select).value = mem1_value
+                        self.call_after_refresh(self._clear_suppress_flag)
                         filled.append(f"Board (Mem1): {mem1_value}")
                     except Exception:
-                        pass
+                        self._suppress_module_defaults = False
                 else:
                     filled.append(f"Board (Mem1, ismeretlen): {mem1_value}")
 
