@@ -592,21 +592,12 @@ class ConfigTab(TabPane):
                 with Vertical(id="general-left"):
                     yield Static("Általános", classes="section-title")
                     with Horizontal(classes="row"):
-                        yield Label("TelePeriod:", classes="label")
-                        yield Input(value="300", id="cfg-teleperiod")
-                    with Horizontal(classes="row"):
                         yield Label("Modul / Board:", classes="label")
                         yield Select(
                             options=MODULE_SELECT_OPTIONS,
                             value=D1_MINI.name,
                             id="cfg-module",
                             allow_blank=False,
-                        )
-                    with Horizontal(classes="row"):
-                        yield Label("Board típus (Mem1):", classes="label")
-                        yield Input(
-                            placeholder="pl. Wemos D1 Mini",
-                            id="cfg-board-type",
                         )
 
             # --- GPIO assignment ----------------------------------------
@@ -1428,7 +1419,7 @@ class ConfigTab(TabPane):
                 topic=_val("#cfg-mqtt-topic"),
                 full_topic=_val("#cfg-mqtt-fulltopic") or "%prefix%/%topic%/",
             ),
-            tele_period=int(_val("#cfg-teleperiod") or "300"),
+            tele_period=300,
             module_type=board_name,
             gpio={str(k): v for k, v in assignments.items()},
         )
@@ -1447,8 +1438,6 @@ class ConfigTab(TabPane):
             ("#cfg-mqtt-user", ""), ("#cfg-mqtt-pass", ""),
             ("#cfg-mqtt-topic", ""),
             ("#cfg-mqtt-fulltopic", "%prefix%/%topic%/"),
-            ("#cfg-teleperiod", "300"),
-            ("#cfg-board-type", ""),
         ]
         for widget_id, value in defaults:
             try:
@@ -1541,7 +1530,6 @@ class ConfigTab(TabPane):
         _set("#cfg-mqtt-pass", cfg.mqtt.password)
         _set("#cfg-mqtt-topic", cfg.mqtt.topic or cfg.topic)
         _set("#cfg-mqtt-fulltopic", cfg.mqtt.full_topic)
-        _set("#cfg-teleperiod", str(cfg.tele_period))
 
         # Board / Module select
         try:
@@ -1704,12 +1692,19 @@ class ConfigTab(TabPane):
                 )
                 filled.append(f"GPIO ({len(gpio_from_device)} pin): {summary}")
 
-            # --- Parse Mem1 (board type) --------------------------------
+            # --- Parse Mem1 (board type) → auto-select in cfg-module if known ---
             mem1_value = _parse_mem1(lines)
             if mem1_value:
-                self._set_input("#cfg-board-type", mem1_value)
                 app.device_board_type = mem1_value
-                filled.append(f"Board típus: {mem1_value}")
+                from tasmota_manager.board_layouts import BOARD_BY_NAME
+                if mem1_value in BOARD_BY_NAME:
+                    try:
+                        self.query_one("#cfg-module", Select).value = mem1_value
+                        filled.append(f"Board (Mem1): {mem1_value}")
+                    except Exception:
+                        pass
+                else:
+                    filled.append(f"Board (Mem1, ismeretlen): {mem1_value}")
 
             # --- Summary notification ----------------------------------
             filled_str = ", ".join(filled) if filled else "–"
@@ -1872,9 +1867,9 @@ class ConfigTab(TabPane):
         module_cmd: str   = ""
         gpio_cmds:  list[str] = []
 
-        # Include board type (Mem1) in phase1 if set
+        # Derive board type (Mem1) from cfg-module selection
         try:
-            board_type_val = self.query_one("#cfg-board-type", Input).value.strip()
+            board_type_val = str(self.query_one("#cfg-module", Select).value or "")
             if board_type_val:
                 phase1.append(f"Mem1 {board_type_val}")
                 self.app.device_board_type = board_type_val  # type: ignore[attr-defined]
@@ -2228,11 +2223,6 @@ class ConfigTab(TabPane):
                 filled += 1
         if data.get("mqtt_port"):
             self._set_input("#cfg-mqtt-port", _s(data["mqtt_port"]))
-            filled += 1
-
-        # --- TelePeriod ---
-        if data.get("tele_period"):
-            self._set_input("#cfg-teleperiod", _s(data["tele_period"]))
             filled += 1
 
         # --- GPIO assignments → Config tab + Board tab ---
