@@ -767,7 +767,7 @@ class ConfigTab(TabPane):
         elif bid == "cfg-new-user-btn":
             # Clear selection + fields → next "Mentés" will add a new user
             try:
-                self.query_one("#cfg-edit-user-select", Select).value = Select.BLANK
+                self.query_one("#cfg-edit-user-select", Select).clear()
             except Exception:
                 pass
             self.query_one("#cfg-new-user-id", Input).value = ""
@@ -782,7 +782,7 @@ class ConfigTab(TabPane):
         elif bid == "cfg-new-region-btn":
             # Clear region selection + fields → next "Mentés" will add a new region
             try:
-                self.query_one("#cfg-edit-region-select", Select).value = Select.BLANK
+                self.query_one("#cfg-edit-region-select", Select).clear()
             except Exception:
                 pass
             self.query_one("#cfg-new-region-id", Input).value = ""
@@ -878,7 +878,7 @@ class ConfigTab(TabPane):
         self.query_one("#cfg-edit-region-select", Select).set_options(
             self._region_options_for_user(user_id)
         )
-        self.query_one("#cfg-edit-region-select", Select).value = Select.BLANK
+        self.query_one("#cfg-edit-region-select", Select).clear()
         self.query_one("#cfg-new-region-id", Input).value = ""
         self.query_one("#cfg-new-region-name", Input).value = ""
 
@@ -1028,7 +1028,7 @@ class ConfigTab(TabPane):
             return
         if delete_user(uid):
             self._refresh_group_selects()
-            self.query_one("#cfg-edit-user-select", Select).value = Select.BLANK
+            self.query_one("#cfg-edit-user-select", Select).clear()
             self.query_one("#cfg-new-user-id", Input).value = ""
             self.query_one("#cfg-new-user-name", Input).value = ""
             self.query_one("#cfg-edit-region-select", Select).set_options([])
@@ -1094,7 +1094,7 @@ class ConfigTab(TabPane):
             self.query_one("#cfg-edit-region-select", Select).set_options(
                 self._region_options_for_user(uid)
             )
-            self.query_one("#cfg-edit-region-select", Select).value = Select.BLANK
+            self.query_one("#cfg-edit-region-select", Select).clear()
             self.query_one("#cfg-new-region-id", Input).value = ""
             self.query_one("#cfg-new-region-name", Input).value = ""
             self.notify(f"Régió törölve: {rid}", severity="information")
@@ -1443,7 +1443,7 @@ class ConfigTab(TabPane):
             pass
         # Reset user/region selects
         try:
-            self.query_one("#cfg-user-select", Select).value = Select.BLANK
+            self.query_one("#cfg-user-select", Select).clear()
             self.query_one("#cfg-region-select", Select).set_options([])
         except Exception:
             pass
