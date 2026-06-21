@@ -41,16 +41,57 @@
 
 ---
 
+## 🌱 Talaj szenzorok
+
+> **Igény (2026-06-21):** kell venni talaj szenzort, de **ne csak nedvességet** mérjen – több földtulajdonság együttes mérése a cél (mezőgazdasági pilot, fólia sátras termelés).
+
+### Miért nem elég a kapacitív nedvesség-sonda?
+
+A legolcsóbb „talajnedvesség" modulok (kapacitív v1/v2 sonda) **csak a nedvességet** adják – nincs hőmérséklet, EC, pH. Pilot és AI elemzéshez több dimenzió kell (pl. öntözés döntés + tápanyag-állapot).
+
+### Jelölt megoldások
+
+| Típus | Mér | Kommunikáció | Tasmota | Megjegyzés |
+|-------|-----|--------------|---------|------------|
+| **RS485 3-in-1 talaj szonda** | Nedvesség, talaj hőmérséklet, EC (vezetőképesség) | RS485 Modbus | ⚠ Egyedi / Modbus bridge | Ipari / mezőgazdasági standard; tartós, kalibrálható |
+| **RS485 5-in-1** | Nedvesség, hőmérséklet, EC, pH, NPK | RS485 Modbus | ⚠ Egyedi | Olcsó 5-in-1 modulok pontossága gyakran kérdéses – ellenőrizendő |
+| Kapacitív + DS18B20 | Nedvesség + talaj hőmérséklet (külön szonda) | Analóg + 1-Wire | ✓ Részben | Olcsó kompromisszum, de EC/pH nincs |
+| pH sonda (külön) | pH | Analóg / I2C | ⚠ | Nedvesség+EC mellett kiegészítő lehet |
+
+**Ajánlott irány:** RS485 **3-in-1** (nedvesség + hőmérséklet + EC) – ez adja a legtöbb értelmes adatot AI elemzéshez és mezőgazdasági döntésekhez anélkül, hogy csak egy paramétert mérnénk.
+
+### Mit mérjen minimum?
+
+| Paraméter | Miért fontos |
+|-----------|--------------|
+| **Talajnedvesség** | Öntözés, szikkadás, csapadék hatás |
+| **Talaj hőmérséklet** | Gyökérfejlődés, fólia sátras mikroklima |
+| **EC (vezetőképesség)** | Tápanyag / sótartalom proxy, trágyázás |
+| pH (opcionális) | Talaj savasság – külön sonda vagy 5-in-1 |
+
+---
+
 ## 👀 Mozgás és jelenlét
 
-### PIR-nél okosabb megoldások
+> **Igény (2026-06-21):** kell **jelenlét érzékelő**, **nem csak mozgás érzékelő** (PIR). A PIR csak mozgáskor jelez – ülő, alvó, olvasó ember „láthatatlan" marad.
+
+### PIR vs jelenlét – döntés
+
+| | PIR (mozgás) | mmWave jelenlét (LD2410) |
+|--|--------------|---------------------------|
+| Statikus ember | ❌ Nem érzékel | ✓ Érzékel (légzés szintű mikromozgás) |
+| Ülő / alvó ember | ❌ | ✓ |
+| Ár | Olcsó | Közepes (~1500–3000 Ft) |
+| Tasmota | ✓ Switch bemenet | ✓ UART / bináris kimenet |
+
+### PIR-nél okosabb megoldások (jelenlét)
 
 | Szenzor | Technológia | Előny |
 |---------|-------------|-------|
-| **LD2410** | mmWave radar (24 GHz) | Statikus embert is érzékel (nem csak mozgást) |
-| **RCWL-0516** | Mikrohullámú Doppler radar | Fal / üveg mögött is érzékel, olcsó |
+| **LD2410C** | mmWave radar (24 GHz) | Statikus embert is érzékel – **Hestore prod_10046482, ~1806 Ft** |
+| **RCWL-0516** | Mikrohullámú Doppler radar | Fal / üveg mögött is érzékel, olcsó – de **mozgás-alapú**, nem statikus jelenlét |
 
-> **LD2410 vs PIR:** A PIR csak mozgást érzékel. Az LD2410 légzés / szívverés szintű mikromozgást is – valaki ülve, olvasva is „jelenlét".
+> **LD2410 vs PIR:** A PIR csak mozgást érzékel. Az LD2410 légzés / szívverés szintű mikromozgást is – valaki ülve, olvasva is „jelenlét". **Beszerzési prioritás: LD2410 (jelenlét), nem PIR.**
 
 ### Távolságmérés
 
@@ -77,7 +118,8 @@
 
 | Szenzor | Mér | Alkalmazás |
 |---------|-----|------------|
-| Kapacitív talajnedvesség | Talaj nedvességtartalom | Növényöntözés automatika |
+| Kapacitív talajnedvesség | Talaj nedvességtartalom | Növényöntözés automatika – **csak nedvesség, nem elég** |
+| **RS485 3-in-1 talaj szonda** | Nedvesség + hőmérséklet + EC | Mezőgazdasági pilot, AI elemzés – **Hestore SOIL-H-T-EC-RS485** |
 | Zavarosságmérő (turbidity) | Vízminőség | Akvárium, vízszűrés, csapadék |
 | **VEML6075** | UV-A + UV-B + UV index | Napvédelem, üvegház, napelem monitoring |
 | pH szenzor | pH érték | Akvárium, talaj, vízkezelés |
@@ -103,9 +145,9 @@
 |-------------------------|-------------|
 | Hőmérséklet / páratartalom monitor | DHT22, BME280, SCD41 |
 | Levegőminőség állomás | MH-Z19B / SCD41 + SGP40/ENS160 + BME280 |
-| Jelenlét / mozgásérzékelő | LD2410 (mmWave), APDS-9960 |
+| Jelenlét / mozgásérzékelő | **LD2410** (mmWave jelenlét), APDS-9960 – **PIR helyett LD2410** |
 | Energiafogyasztás mérő | INA219 (DC) vagy SCT-013 (AC) |
-| Növénymonitor | Talajnedvesség + DHT22 + fényszenzor |
+| Növénymonitor / talaj | RS485 3-in-1 (nedvesség + hő + EC) + fényszenzor |
 | Általános I/O (relé + szenzor) | BME280 + relékimenet |
 
 ---
@@ -115,3 +157,6 @@
 - [ ] Melyik szenzortípusok kerülnek bele az **első pilot**ba?
 - [ ] Szükséges-e CO₂ mérés a pilot helyszíneken?
 - [ ] LoRa érdekes lehet-e a GSM helyett egyes terepi helyszíneken?
+- [ ] **Talaj szenzor:** Hestore **SOIL-H-T-EC-RS485** (prod_10048070) + **MAX485-M** – Modbus Tasmota integráció hogyan?
+- [ ] **Jelenlét érzékelő:** Hestore **LD2410C** (prod_10046482) – GPIO vs UART bekötés Tasmotával?
+- [ ] RS485–TTL konverter (MAX485) szükséges a talaj szondához?

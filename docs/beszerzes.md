@@ -64,3 +64,76 @@ Forrás: `hestore_20260528.xml`
 > - Az Ethernet chip több GPIO-t lefoglal
 > - Nincs beépített USB programozó → külső USB–TTL adapter kell flasheléshez
 > - Tasmotával/ESPHome-mal használható, de első körre nem ez az ajánlott fejlesztői board
+
+### Talaj szenzor (többparaméteres)
+
+> **Igény (2026-06-21):** nem elég a kapacitív nedvesség-sonda – **nedvesség + hőmérséklet + EC** minimum.
+
+#### Hestore összehasonlítás (2026-06-21)
+
+| Hestore | Termék | Mér | Ár (1+ db, nettó) | Raktár | Javaslat |
+|---------|--------|-----|------------------|--------|----------|
+| [prod_10048070](https://www.hestore.hu/prod_10048070.html) | **SOIL-H-T-EC-RS485** | Nedvesség, hőmérséklet, EC (+ só, TDS Modbus reg.) | **12 333 Ft** | > 5 | **Ajánlott – megvenni** |
+| [prod_10048071](https://www.hestore.hu/prod_10048071.html) | SOIL-H-RS485 | Csak nedvesség | 10 461 Ft | > 10 | ❌ Nem elég – csak 1 paraméter |
+| [prod_10046391](https://www.hestore.hu/prod_10046391.html) | JXBS-3001-NPK-RS | 7-in-1: NPK + pH + EC + hő + nedvesség | 37 463 Ft | > 5 | Drágább; NPK/pH pontossága kérdéses |
+
+**Ajánlott vásárlás:** `SOIL-H-T-EC-RS485` (cikkszám 100.480.70)
+
+| Paraméter | Tartomány | Pontosság |
+|-----------|-----------|-----------|
+| Talajnedvesség | 0…100 %RH | ±2 % (0–50 %), ±3 % (50–100 %) |
+| Talaj hőmérséklet | −40…+80 °C | ±0,5 °C |
+| EC (vezetőképesség) | 0…20 000 µS/cm | ±3 % (0–10 000 µS/cm) |
+
+**Technikai adatok:**
+- IP68, rozsdamentes acél szonda, 2 m kábel
+- Táp: 5…30 V DC (max. 0,5 W @ 24 V)
+- RS485 Modbus-RTU, alap baud: **4800**
+- Kivezetés: Barna V+, Fekete GND, Kék RS485_B, Sárga RS485_A
+- Modbus regiszterek: `0x0000` nedvesség, `0x0001` hőmérséklet, `0x0002` EC, `0x0003` só, `0x0004` TDS
+
+**Kiegészítő modul (ESP32-hez):**
+
+| Hestore | Termék | Ár (1+ db, nettó) | Raktár | Megjegyzés |
+|---------|--------|-------------------|--------|------------|
+| [prod_10035508](https://www.hestore.hu/prod_10035508.html) | **MAX485-M** RS485–TTL | **365 Ft** | > 500 | **Megvenni** – talaj szonda illesztéséhez |
+| [prod_10047988](https://www.hestore.hu/prod_10047988.html) | USB-RS485 (CH340) | 613 Ft | > 350 | Asztali teszteléshez (PC ↔ szonda) |
+
+> Tasmota: RS485 Modbus olvasás egyedi megoldást igényel (Serial + Modbus parancs, vagy custom driver). Baud: 4800, 8N1.
+
+---
+
+### Jelenlét érzékelő (nem PIR)
+
+> **Igény (2026-06-21):** **jelenlét érzékelő** kell, **nem mozgásérzékelő** (PIR). Statikus ember is érzékelendő.
+
+#### Hestore – LD2410C (2026-06-21)
+
+| Hestore | Termék | Ár (1+ db, nettó) | Raktár | Javaslat |
+|---------|--------|-------------------|--------|----------|
+| [prod_10046482](https://www.hestore.hu/prod_10046482.html) | **LD2410C** – emberi jelenlét radar (Hi-Link) | **1 806 Ft** | > 250 | **Megvenni** |
+
+**LD2410C technikai adatok:**
+- 24 GHz FMCW mmWave radar – mozgó **és** álló ember érzékelése (mikromozgás)
+- Hatótáv: 0,75…6 m, látószög 60°
+- Kimenet: **GPIO** (van/nincs jelenlét) + **UART** (távolság, állapot protokoll)
+- UART: 256000 baud, 8N1; IO szint 3,3 V; táp **5 V DC** (> 200 mA)
+- Bluetooth + vizuális konfigurációs eszköz (érzékenység, távolság zónák)
+- Beltéri használatra (fólia sátor / szoba is jó)
+
+> A Hestore-n csak LD2410**C** van készleten (nem a régebbi LD2410). Tasmota: GPIO Switch bemenet egyszerűen; UART adatokhoz egyedi Serial parser kell.
+
+> A meglévő PIR teszt (D1 Mini) marad referenciának, de új beszerzésnél LD2410C a cél.
+
+---
+
+### Tervezett kosár összesítés (Hestore, 2026-06-21)
+
+| Termék | db | Egységár (nettó) | Összesen |
+|--------|----|------------------|----------|
+| SOIL-H-T-EC-RS485 | 1 | 12 333 Ft | 12 333 Ft |
+| MAX485-M | 1 | 365 Ft | 365 Ft |
+| LD2410C | 1 | 1 806 Ft | 1 806 Ft |
+| **Összesen** | | | **~14 504 Ft** |
+
+Opcionális: USB-RS485 (613 Ft) – szonda PC-s teszteléshez a firmware fejlesztés alatt.

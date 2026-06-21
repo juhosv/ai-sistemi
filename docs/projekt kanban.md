@@ -5,6 +5,8 @@ kanban-plugin: board
 ## todo
 
 - [ ] Otthoni adatgyűjtés – Viktor: minél több eszköz/szenzor üzembe helyezése (AI kísérletekhez)
+- [ ] **Beszerzés:** Hestore SOIL-H-T-EC-RS485 + MAX485-M (talaj: nedvesség + hő + EC)
+- [ ] **Beszerzés:** Hestore LD2410C jelenlét érzékelő (mmWave, nem PIR)
 - [ ] Szerver vásárlás intézése – Zsolti
 - [ ] Honlap összeállítása – Bálint (korábbi munkák leírásával)
 - [ ] Domain név kiválasztása – `.rs` végződés

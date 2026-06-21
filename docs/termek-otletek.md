@@ -305,7 +305,7 @@ Nyilvános meteo API  ────┘         └── Ervin / Gilvázi István
 - [ ] Ervin pilot helyszínének pontosítása
 - [ ] Gilvázi István – fólia sátras minta projekt: milyen szenzorok/vezérlések lennének hasznosak?
 - [ ] Mely meteorológiai API-k érhetők el Szerbiában ingyenesen?
-- [ ] Milyen szenzorok kellenek (nedvesség mélység, talaj hőmérséklet)?
+- [ ] Milyen szenzorok kellenek? → **RS485 3-in-1** (nedvesség + talaj hő + EC), nem csak kapacitív nedvesség
 - [ ] GSM 4G szükséges-e a mezőgazdasági helyszínen (nincs WiFi)?
 
 ---
