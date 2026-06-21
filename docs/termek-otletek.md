@@ -230,6 +230,100 @@ Az eszközre nyomtatott QR kód → SmartBlue webes konfigurátor előre kitölt
 
 ---
 
+## 🤖 AI agent – szenzoradatok feldolgozása, következtetések és előrejelzések
+
+> Ötlet (2026-06-21): a kihelyezett szenzorokból érkező adatokat AI agent-tel dolgozzuk fel, és a beérkező mérésekből következtetéseket, előrejelzéseket vonunk le.
+
+### Első jelölt: Hermes Agent
+
+A [Hermes Agent](https://github.com/NousResearch/hermes-agent) az első vizsgált megoldás – nyílt forráskódú AI agent keretrendszer, amely eszközökhöz és adatforrásokhoz csatlakozva képes elemzést és válaszadást végezni.
+
+```
+Szenzorok → MQTT → InfluxDB / PostgreSQL
+                         │
+                         ▼
+                   Hermes Agent  ←── felhasználói kérdések (chat)
+                         │
+                         ▼
+              következtetések, előrejelzések, riasztások
+```
+
+### Kulcs követelmény: felhasználónkénti adatelkülönítés
+
+**Minden usert külön kell kezelni** – amikor a Hermes válaszol a kérdésekre, csak az adott felhasználó saját szenzoradatait lássa. Ez multi-tenant architektúrát igényel:
+
+| Terület | Kihívás |
+|---------|---------|
+| Adatbázis lekérdezések | InfluxDB / PostgreSQL lekérdezések user_id szerint szűrve |
+| Agent kontextus | A Hermes session / tool hívások ne férjenek hozzá más user adataihoz |
+| Eszköz azonosítás | MQTT topic struktúra (`{user_id}/{regio_id}/...`) összhangban az agent hozzáféréssel |
+
+### AI-alapú paraméterezés + Node-RED
+
+Jó lenne, ha az eszközök **paraméterezését is az AI tudná végezni** (pl. „állítsd a ventilátor küszöböt 28 °C-ra"), esetleg **Node-RED flow-kkal kiegészítve** az automatizálást.
+
+Ugyanaz a multi-user probléma merül fel: Node-RED-ben is meg kell oldani, hogy minden felhasználó csak a saját flow-jait és eszközeit érje el.
+
+### Első lépés – otthoni adatgyűjtés (Viktor)
+
+Mielőtt éles pilot indul, **otthon minél több eszközt és szenzort üzembe helyezni**, és elkezdeni az adatok gyűjtését – így kiderül, mit tud velük kezdeni az AI (mintaadatok, minta kérdések, korai prototípus).
+
+### Nyitott kérdések
+
+- [ ] Hermes Agent self-hosted vs. felhő – hol fut, milyen LLM backend?
+- [ ] Hogyan kötjük össze a Hermes tool-okat az InfluxDB / FastAPI API-val?
+- [ ] Node-RED integráció: külön instance user-enként, vagy egy instance tenant-szűréssel?
+- [ ] Milyen típusú kérdések / előrejelzések a legértékesebbek az első pilotban?
+- [ ] Adatvédelem: az LLM-nek milyen adatmennyiséget szabad átadni (GDPR)?
+
+---
+
+## 🌾 Mezőgazdasági alkalmazás (pilot lehetőség)
+
+> Továbbra is számolunk a mezőgazdasági alkalmazás lehetőségével. A pilot projektet valószínűleg **Ervinnel** fogjuk megcsinálni. **Gilvázi Istvánnál** is lehetne egy minta projekt – fólia sátras termelésben van benne, valószínűleg tudna hasznos ötleteket adni a terepi igényekről.
+
+### Lehetséges pilot helyszínek
+
+| Személy | Háttér | Szerep a pilotban |
+|---------|--------|-------------------|
+| **Ervin** | Mezőgazdaság | Valószínű első pilot partner |
+| **Gilvázi István** | Fólia sátras termelés | Minta projekt helyszín; domain szakértelem, ötletek a mérési/vezérlési igényekről |
+
+### Koncepció
+
+Terepi szenzorokkal mért földtulajdonságok (pl. **talajnedvesség**, hőmérséklet) kiegészíthetők **nyilvános meteorológiai adatokkal** (csapadék, hőmérséklet, páratartalom előrejelzés) – így az AI agent összetettebb következtetéseket tud levonni (pl. öntözési javaslat, betegség-kockázat).
+
+```
+Talajnedvesség szenzor ──┐
+Hőmérséklet szenzor    ──┼──► SmartBlue szerver ──► AI agent
+                         │         ▲
+Nyilvános meteo API  ────┘         └── Ervin / Gilvázi István pilot helyszín
+```
+
+### Nyitott kérdések
+
+- [ ] Ervin pilot helyszínének pontosítása
+- [ ] Gilvázi István – fólia sátras minta projekt: milyen szenzorok/vezérlések lennének hasznosak?
+- [ ] Mely meteorológiai API-k érhetők el Szerbiában ingyenesen?
+- [ ] Milyen szenzorok kellenek (nedvesség mélység, talaj hőmérséklet)?
+- [ ] GSM 4G szükséges-e a mezőgazdasági helyszínen (nincs WiFi)?
+
+---
+
+## ⚡ Háromfázisú teljesítménymérő – minta áramkör (Zöldi)
+
+> Zsolti összerak egy **minta áramkört**, amely **három fázis teljesítményét** méri, és **Zöldinél** fogja beüzemelni.
+
+Ez a „Gép teljesítmény monitor" ötlet kiterjesztése többfázisú (3×230V) ipari / háztartási mérésre. A minta áramkör célja: a mérési elv validálása valós környezetben, mielőtt sorozatgyártásba menne.
+
+### Nyitott kérdések
+
+- [ ] Milyen szenzor / IC (pl. PZEM-004T, ADE7953, SCT-013 × 3)?
+- [ ] Egy ESP32-n hány fázis mérhető egyszerre?
+- [ ] Zöldi helyszín: milyen gépek / fogyasztók lesznek mérve?
+
+---
+
 ## További termék ötletek (jövőre)
 
 | Ötlet | Leírás |

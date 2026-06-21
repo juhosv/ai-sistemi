@@ -22,6 +22,9 @@ Az első pilot projektek **Szerbiában** kerülnek telepítésre.
 |---------|--------|--------|
 | **Robi** | Riasztórendszerek szerelése | Helyszíni üzembe helyezés és üzemeltetés; saját szervere van |
 | **Alfréd** | Diák, kamera-rendszerek szerelése | Helyszíni üzembe helyezés és üzemeltetés |
+| **Ervin** | Mezőgazdaság | Mezőgazdasági pilot projekt (talajnedvesség + meteo adatok) – valószínű partner |
+| **Gilvázi István** | Fólia sátras termelés | Minta projekt helyszín; hasznos ötleteket tud adni a terepi igényekről |
+| **Zöldi** | – | Háromfázisú teljesítménymérő minta áramkör teszthelyszín (Zsolti beüzemeli) |
 
 > Az első eszközöket várhatóan ők helyezik üzembe és üzemeltetik.  
 > Robinak van egy szervere – Bálint megvizsgálja, hogy alkalmas-e a SmartBlue stack-hez.
@@ -35,6 +38,8 @@ Az első pilot projektek **Szerbiában** kerülnek telepítésre.
 - Az összes projektinformáció markdown fájlokban kerül rögzítésre ebben a mappában
 - Elsődleges cél: a tudásbázis felépítése és a döntések dokumentálása
 - A pilot projekt indulásához szükséges döntések és feladatok nyomon követése: [`dontes-elokeszito.md`](dontes-elokeszito.md)
+- **Otthoni adatgyűjtés (Viktor):** minél több eszköz és szenzor üzembe helyezése otthon, adatok gyűjtése – hogy kiderüljön, mit tud velük kezdeni az AI agent (lásd [`termek-otletek.md`](termek-otletek.md) – AI agent fejezet)
+- **Zsolti:** szerver vásárlás intézése; háromfázisú teljesítménymérő minta áramkör összeszerelése → Zöldinél beüzemelés
 
 ---
 
@@ -108,6 +113,9 @@ Az eszközcsalád tagjai specifikus feladatokra optimalizált eszközök, nem un
 - **GitHub:** A projekt átkerül GitHub-ra – így Zsolti, Robi és Alfréd is könnyen hozzáfér a dokumentumokhoz és fájlokhoz
 - **Obsidian:** A dokumentáció Obsidian-ban szerkesztve, Git pluginnal szinkronizálva → szépen renderelt MD fájlok mindenki számára
 - **Projektmenedzsment:** Eszköz kiválasztása folyamatban (GitHub Projects, Linear, Notion stb.)
+- **Szerver vásárlás:** Zsolti elkezdi intézni a produkciós szerver beszerzését (2026-06-21)
+- **Honlap:** Szükséges egy jó honlap, amely a korábbi munkák leírását is tartalmazza – **Bálintot megkérjük**, hogy állítsa össze
+- **Domain név:** Még ki kell találni – **`.rs` végződés** a cél (szerbiai piac, helyi jelenlét)
 
 ---
 

@@ -4,6 +4,14 @@ kanban-plugin: board
 
 ## todo
 
+- [ ] Otthoni adatgyűjtés – Viktor: minél több eszköz/szenzor üzembe helyezése (AI kísérletekhez)
+- [ ] Szerver vásárlás intézése – Zsolti
+- [ ] Honlap összeállítása – Bálint (korábbi munkák leírásával)
+- [ ] Domain név kiválasztása – `.rs` végződés
+- [ ] Háromfázisú teljesítménymérő minta áramkör – Zsolti → Zöldinél beüzemelés
+- [ ] Mezőgazdasági pilot előkészítés – Ervinnel; Gilvázi István fólia sátras minta projekt
+- [ ] AI agent (Hermes) multi-tenant architektúra megtervezése
+- [ ] AI paraméterezés + Node-RED multi-user megoldás vizsgálata
 - [ ] Email értesítés Soginak Switch/PIR eseményre (`zsoltorigo@gmail.com`)
 - [ ] PIR szenzor éles teszt (Sogi helyszínen)
 - [ ] MVP scope meghatározása – mi kell az első pilot induláshoz minimálisan

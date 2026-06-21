@@ -92,6 +92,14 @@ EMQX auth:    Még nem döntött                                  [nyitott]
 - [ ] **Projektmenedzsment eszköz** – kiválasztás és beállítás
 - [ ] **Robi szervere** – Bálint megvizsgálja, megfelelő-e a SmartBlue stack-nek
 - [ ] **Fejlesztési ötletek gyűjtése** – Robi és Alfréd inputja a prioritásokhoz
+- [ ] **Otthoni adatgyűjtés (Viktor)** – minél több eszköz/szenzor üzembe helyezése, mintaadatok gyűjtése az AI agent kísérletekhez
+- [ ] **Szerver vásárlás** – Zsolti intézi a produkciós szerver beszerzését
+- [ ] **Honlap elkészítése** – Bálint összeállítja; tartalmazza a korábbi munkák leírását is
+- [ ] **Domain név kiválasztása** – `.rs` végződésű domain
+- [ ] **Háromfázisú teljesítménymérő minta** – Zsolti áramkör → Zöldinél beüzemelés
+- [ ] **Mezőgazdasági pilot** – Ervinnel; Gilvázi Istvánnál fólia sátras minta projekt lehetőség
+- [ ] **AI agent (Hermes) multi-tenant architektúra** – felhasználónkénti adatelkülönítés megoldása
+- [ ] **AI paraméterezés + Node-RED** – eszközparaméterek AI-val állítása; multi-user kezelés Node-RED-ben
 
 ## Teszt fázis – státusz
 
@@ -131,3 +139,12 @@ Ez **edge-triggered** logika – a szervernek ezt figyelembe kell vennie a feldo
 - Mekkora a fejlesztési csapat?
 - Mi a pilot fázis sikerkritériuma?
 - Mikor kell az első pilot indulnia?
+- Milyen `.rs` domain név legyen?
+- Honlap tartalma és struktúra – milyen korábbi munkákat emeljünk ki?
+
+### AI / adatfeldolgozás
+- Hermes Agent self-hosted vagy felhő?
+- Hogyan biztosítjuk, hogy az agent csak az adott user adatait látja?
+- Node-RED: külön instance user-enként, vagy tenant-szűrés egy instance-ben?
+- Milyen LLM backend (lokális vs. API)?
+- Milyen meteorológiai API-k használhatók Szerbiában (mezőgazdasági pilot)?
