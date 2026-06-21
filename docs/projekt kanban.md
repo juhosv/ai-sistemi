@@ -14,6 +14,8 @@ kanban-plugin: board
 - [ ] Mezőgazdasági pilot előkészítés – Ervinnel; Gilvázi István fólia sátras minta projekt
 - [ ] AI agent (Hermes) multi-tenant architektúra megtervezése
 - [ ] AI paraméterezés + Node-RED multi-user megoldás vizsgálata
+- [ ] Panic button kibővítés – LD2410C jelenlét + AI szokásprofil
+- [ ] BLE személy-érzékelés ötlet kidolgozása (scan, whitelist, adatvédelem)
 - [ ] Email értesítés Soginak Switch/PIR eseményre (`zsoltorigo@gmail.com`)
 - [ ] PIR szenzor éles teszt (Sogi helyszínen)
 - [ ] MVP scope meghatározása – mi kell az első pilot induláshoz minimálisan

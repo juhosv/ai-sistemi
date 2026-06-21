@@ -148,3 +148,5 @@ Ez **edge-triggered** logika – a szervernek ezt figyelembe kell vennie a feldo
 - Node-RED: külön instance user-enként, vagy tenant-szűrés egy instance-ben?
 - Milyen LLM backend (lokális vs. API)?
 - Milyen meteorológiai API-k használhatók Szerbiában (mezőgazdasági pilot)?
+- Panic button: jelenlét szenzor + AI szokásprofil – milyen riasztási küszöbök?
+- BLE személy-érzékelés: MAC randomization, GDPR, Tasmota vs custom firmware?

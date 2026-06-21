@@ -10,6 +10,8 @@
 
 Egy konnektorba dugható kis doboz, amelyen egyetlen nyomógomb van. Megnyomáskor értesítést küld a beállított személyeknek (hozzátartozók, gondozók stb.).
 
+> **Kibővítés (2026-06-21):** az eszközt ki kell egészíteni **emberi jelenlét érzékeléssel** (mmWave radar, pl. LD2410C). Ha az adatokat **AI-val elemezzük**, további következtetések vonhatók le – pl. megváltozott egy személy mozgásának / jelenlétének szokása.
+
 ### Célcsoport
 - **Elsődleges:** Idős emberek, akik egyedül élnek
 - **Másodlagos:** Betegek, gyengélkedők, gyerekek felügyelete
@@ -19,18 +21,41 @@ Egy konnektorba dugható kis doboz, amelyen egyetlen nyomógomb van. Megnyomásk
 
 ```
 1. Eszköz konnektorba dugva → folyamatos táplálás, WiFi kapcsolat
-2. Felhasználó megnyomja a gombot
-3. ESP32 MQTT üzenetet küld a szervernek
-4. Szerver értesítést küld a hozzátartozóknak:
-   - Push üzenet (mobilapp / Telegram)
-   - SMS
-   - Email
-5. Opcionális: visszajelzés az eszközön (LED, hangjelzés)
+2. LD2410C folyamatosan méri: van-e jelenlét a szobában (mozgó + álló ember)
+3. Felhasználó megnyomja a gombot (SOS / OK)
+4. ESP32 MQTT üzenetet küld a szervernek (gomb esemény + jelenlét állapot)
+5. Szerver / AI agent elemzi az adatokat idősorban
+6. Értesítés a hozzátartozóknak (push / SMS / email) – esemény vagy AI riasztás alapján
+7. Opcionális: visszajelzés az eszközön (LED, hangjelzés)
 ```
+
+### Jelenlét érzékelés + AI elemzés
+
+A nyomógomb önmagában csak **reaktív** (a felhasználónak kell nyomnia). A **jelenlét szenzor** passzív, folyamatos adatot ad:
+
+| Adatforrás | Mit mér | AI-ból levonható következtetés |
+|------------|---------|--------------------------------|
+| **LD2410C** (jelenlét) | Van/nincs ember, mozgó vs. álló, távolság zónák | Szokásos napi aktivitási minta; hirtelen változás (pl. reggel 8-ig mindig volt jelenlét, ma nincs) |
+| **Nyomógomb** (SOS / OK) | Explicit check-in, segítségkérés | Összevetés: volt jelenlét, de nem nyomta meg az OK gombot |
+| **Kombinált idősor** | Jelenlét + gomb események | „Megváltozott a mozgás szokása" – pl. kevesebb mozgás, hosszabb ülés, szokatlan éjszakai aktivitás |
+
+```
+LD2410C ──► jelenlét idősor ──┐
+Nyomógomb ──► események ──────┼──► InfluxDB ──► AI agent (Hermes)
+                              │                      │
+                              │                      ▼
+                              └──► szokásprofil   riasztás: „szokatlan nap"
+```
+
+Példa riasztások (AI-generált vagy szabály-alapú):
+- Reggel 10 óráig nem volt jelenlét (pedig minden nap 7–8 között fel szokott kelni)
+- 48 órája nincs OK check-in **és** alacsony a jelenlét aktivitás
+- Éjszaka szokatlanul sok mozgás (esés, nyugtalanság gyanú)
 
 ### Hardver elemek
 - ESP32 (WiFi beépített)
 - 1 db nyomógomb (vagy több: SOS + OK/Megvagyok)
+- **LD2410C** mmWave jelenlét érzékelő (Hi-Link) – lásd [`beszerzes.md`](beszerzes.md)
 - Tápegység modul (230V AC → 3.3V/5V DC, konnektoros formátum)
 - LED visszajelző
 - Opcionális: kis buzzer (hangjelzés)
@@ -52,7 +77,9 @@ Egy konnektorba dugható kis doboz, amelyen egyetlen nyomógomb van. Megnyomásk
 
 ### Előnyök
 - Konnektorba dugható → nem kell tölteni, nem merül le
-- Egyszerű használat (1 gomb)
+- Egyszerű használat (1 gomb) – az idős embernek nem kell semmit tanulnia
+- **Passzív felügyelet** jelenlét szenzorral – nem kell mindig nyomkodni
+- AI szokásprofil → korai figyelmeztetés gomb megnyomása nélkül is
 - Nem kell mobiltelefon / tablet az idős embernek
 - Olcsón legyártható az ESP32 platform miatt
 - A SmartBlue szerver infrastruktúra azonnal használható
@@ -63,8 +90,64 @@ Egy konnektorba dugható kis doboz, amelyen egyetlen nyomógomb van. Megnyomásk
 - [ ] Kell-e visszajelzés az eszközön a sikeres küldésről? (LED / hang)
 - [ ] Legyen-e „check-in" funkció (napi OK gomb)?
 - [ ] Intézményi vagy otthoni piac az elsődleges?
+- [ ] LD2410C GPIO (van/nincs) elég, vagy UART adatok (távolság, mozgó/álló) is kellenek az AI-hoz?
+- [ ] Milyen időablakok / szokásprofil paraméterek legyenek az első verzióban?
+- [ ] GDPR: jelenlét adat tárolása és hozzátartozói hozzáférés jogi keretei
 
 ---
+
+## 📡 Bluetooth (BLE) alapú személy-érzékelés
+
+> **Ötlet (2026-06-21):** ha folyamatosan monitorozzuk, hogy **milyen nevű Bluetooth eszközöket** lát az ESP32 a környezetben, abból is lehet következtetni dolgokra – pl. szokás változásokra. **A részletek még kidolgozandók.**
+
+### Koncepció
+
+Az ESP32 **BLE scan** módban passzívan figyeli a közeli Bluetooth Low Energy eszközöket. A felhasználó (vagy gondozó) regisztrálja, mely eszköznevek / MAC címek „tartoznak" az adott személyhez (pl. telefon, okosóra, fülhallgató).
+
+```
+ESP32 BLE scan ──► látható eszközök listája (név, MAC, RSSI, időbélyeg)
+                         │
+                         ▼
+                   SmartBlue szerver ──► AI agent
+                         │
+                         ▼
+              „Ma 9 óráig nem láttuk János telefonját"
+              „Szokatlan új eszköz jelent meg este 23-kor"
+```
+
+### Mit lehet következtetni?
+
+| Megfigyelés | Lehetséges következtetés |
+|-------------|--------------------------|
+| Szokásos eszköz reggel megjelenik | A személy felkelt / otthon van |
+| Szokásos eszköz nem jelenik meg X órán át | Eltérés a napi rutintól – riasztás |
+| Eszköz RSSI hirtelen eltűnik | Elment otthonról (telefon magával) |
+| Új, nem regisztrált eszköz | Látogató? – kontextustól függ |
+| Éjszakai eszköz-mintázat változás | AI: szokás változás, érdemes figyelni |
+
+### Kapcsolat más ötletekkel
+
+- **Panic button + jelenlét:** BLE és LD2410C **kiegészítik** egymást – BLE a személy telefonját „látja", a radar a fizikai jelenlétet méri gomb nélkül
+- **AI agent:** ugyanaz a Hermes / idősor elemzés pipeline – BLE scan eredmények is InfluxDB-be kerülnek
+- **Provisioning fejezet BLE-je más cél:** ott BLE a *WiFi beállításhoz* kell; itt BLE az *érzékelés*
+
+### Technikai kiinduló pontok (TBD)
+
+- ESP32 natív BLE scan (Bluedroid / NimBLE) – Tasmota támogatás ellenőrizendő, esetleg custom firmware
+- Scan intervallum, tápellátás, adatmennyiség trade-off
+- Regisztrált eszközlista user-enként (PostgreSQL)
+- RSSI szűrés: csak „közeli" eszközök (szobán belül vs. szomszéd)
+
+### Nyitott kérdések (részletek kidolgozandók)
+
+- [ ] **MAC randomization:** modern telefonok randomizált MAC-et adnak – név alapú azonosítás megbízható-e?
+- [ ] **iOS vs Android:** BLE advertising különbségek – mely platformok működnek jól?
+- [ ] **Adatvédelem / GDPR:** más emberek BT eszközeinek scan-elése jogilag rendben van-e?
+- [ ] **Tasmota vs custom firmware:** BLE scan elérhető-e Tasmotával, vagy külön ESP-IDF build kell?
+- [ ] Milyen scan gyakoriság és retention policy?
+- [ ] Hány regisztrált eszköz / felhasználó realistic?
+- [ ] BLE önálló termék, vagy panic button / gateway eszköz része?
+- [ ] Hamis pozitív/negatív: telefon BT kikapcsolva, repülőgép mód – hogyan kezeljük?
 
 ---
 
@@ -275,6 +358,8 @@ Mielőtt éles pilot indul, **otthon minél több eszközt és szenzort üzembe 
 - [ ] Node-RED integráció: külön instance user-enként, vagy egy instance tenant-szűréssel?
 - [ ] Milyen típusú kérdések / előrejelzések a legértékesebbek az első pilotban?
 - [ ] Adatvédelem: az LLM-nek milyen adatmennyiséget szabad átadni (GDPR)?
+- [ ] **Szokásprofil / anomália detekció:** panic button + jelenlét + BLE adatokból – milyen algoritmus / prompt?
+- [ ] BLE scan adatok tárolása és user-enkénti eszköz-whitelist kezelése
 
 ---
 
@@ -331,3 +416,4 @@ Ez a „Gép teljesítmény monitor" ötlet kiterjesztése többfázisú (3×230
 | Levegőminőség állomás | CO₂ + hőmérséklet + pára, irodai / iskolai telepítésre |
 | Okos kapcsoló | Meglévő villanykapcsolóba épülő ESP32 modul |
 | Növényöntöző | Talajnedvesség + szivattyúvezérlés |
+| Idős felügyelet (panic + jelenlét + BLE) | Nyomógomb + LD2410C + opcionális BLE scan, AI szokásprofil |
