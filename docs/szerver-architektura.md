@@ -1,6 +1,22 @@
 # Szerver architektúra
 
-> **Státusz: Stack DÖNTVE** – 2026-05-19
+> **Státusz: Stack DÖNTVE** – 2026-05-19  
+> **Megvalósítási fázis:** 1. fázis – adatgyűjtés, feldolgozás, dashboard → [`megvalositasi-terv.md`](megvalositasi-terv.md)
+
+---
+
+## 1. fázis scope (aktuális fókusz)
+
+Az 1. fázisban a szerver **adatot gyűjt, tárol, feldolgoz és megjelenít** – szabályzás és eszközkonfiguráció később (2. fázis).
+
+| Adattípus | Forrás | Tárolás |
+|-----------|--------|---------|
+| Szenzor / eszköz | MQTT (Tasmota) | InfluxDB |
+| Felhasználói napló | REST API (feltöltés) | PostgreSQL |
+| Külső (meteo stb.) | Scheduler + HTTP API | InfluxDB |
+| Származtatott / stat | Batch job (aggregáció; később ML) | InfluxDB |
+
+A későbbi **LLM chat** csak **adatmegjelenítő réteg** – nem helyettesíti a konfiguráció-kezelést vagy szabálymotort.
 
 ---
 

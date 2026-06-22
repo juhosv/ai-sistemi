@@ -18,7 +18,10 @@ kanban-plugin: board
 - [ ] BLE személy-érzékelés ötlet kidolgozása (scan, whitelist, adatvédelem)
 - [ ] Email értesítés Soginak Switch/PIR eseményre (`zsoltorigo@gmail.com`)
 - [ ] PIR szenzor éles teszt (Sogi helyszínen)
-- [ ] MVP scope meghatározása – mi kell az első pilot induláshoz minimálisan
+- [ ] MVP scope meghatározása – 1. fázis: adatgyűjtés + dashboard
+- [ ] Felhasználói napló API + beviteli felület (1. fázis)
+- [ ] Meteorológiai API integráció (1. fázis – külső adatforrás)
+- [ ] Grafana / dashboard – szenzor adatok megjelenítése
 - [ ] EMQX autentikáció – eszköz azonosítási módszer kiválasztása
 - [ ] Dashboard döntés – Grafana, egyedi UI, vagy csak riasztás?
 - [ ] Mobilalkalmazás döntés – web UI, PWA vagy natív app?
@@ -29,6 +32,7 @@ kanban-plugin: board
 
 ## in progress
 
+- [ ] **1. fázis** – adatgyűjtés, feldolgozás, dashboard ([`megvalositasi-terv.md`](megvalositasi-terv.md))
 - [ ] Tasmota Manager TUI – hibajavítások és stabilitás (board oszcilláció, config fetch)
 - [ ] Pilot előkészítés – Sogi helyszíni eszközök tesztelése
 

@@ -33,13 +33,16 @@ Az első pilot projektek **Szerbiában** kerülnek telepítésre.
 
 ## Projekt jelenlegi fázisa
 
-**Információgyűjtés és pilot előkészítés**
+**1. fázis – adatgyűjtés és megjelenítés** (2026-06-21)
 
+→ Részletes terv: [`megvalositasi-terv.md`](megvalositasi-terv.md)
+
+- **Most:** adatok gyűjtése, feldolgozása, dashboard-on megjelenítése
+- **Később (2. fázis):** szabályzás, konfig letöltés, automatizálás
 - Az összes projektinformáció markdown fájlokban kerül rögzítésre ebben a mappában
-- Elsődleges cél: a tudásbázis felépítése és a döntések dokumentálása
-- A pilot projekt indulásához szükséges döntések és feladatok nyomon követése: [`dontes-elokeszito.md`](dontes-elokeszito.md)
-- **Otthoni adatgyűjtés (Viktor):** minél több eszköz és szenzor üzembe helyezése otthon, adatok gyűjtése – hogy kiderüljön, mit tud velük kezdeni az AI agent (lásd [`termek-otletek.md`](termek-otletek.md) – AI agent fejezet)
-- **Zsolti:** szerver vásárlás intézése; háromfázisú teljesítménymérő minta áramkör összeszerelése → Zöldinél beüzemelés
+- A pilot projekt indulásához szükséges döntések és feladatok: [`dontes-elokeszito.md`](dontes-elokeszito.md)
+- **Otthoni adatgyűjtés (Viktor):** minél több eszköz és szenzor üzembe helyezése otthon
+- **Zsolti:** szerver vásárlás intézése; háromfázisú teljesítménymérő minta áramkör → Zöldinél beüzemelés
 
 ---
 
@@ -135,3 +138,4 @@ Az eszközcsalád tagjai specifikus feladatokra optimalizált eszközök, nem un
 | `hw-kijelzok.md` | Kijelző opciók – SSD1306, TFT, e-paper (Tasmota kompatibilitás) |
 | `hw-gyartok-tasmota.md` | Tasmota-kompatibilis gyártók (Athom, Nous, Shelly, Sonoff stb.) |
 | `dontes-elokeszito.md` | Összefoglaló döntési mátrix |
+| `megvalositasi-terv.md` | Kétfázisú megvalósítási terv (1. fázis: adatgyűjtés + dashboard) |

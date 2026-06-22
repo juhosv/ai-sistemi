@@ -68,12 +68,16 @@ Backend:      Python / FastAPI + aiomqtt                       [döntve]
 Relációs DB:  PostgreSQL (SQLAlchemy async + Alembic)          [döntve]
 Idősor DB:    InfluxDB                                         [döntve]
 Üzemeltetés: Saját csapat – VPS + Docker Compose              [döntve]
-Értesítés:    Email (kötelező) + SMS (javasolt)                [nyitott]
-Dashboard:    Még nem döntött                                  [nyitott]
+Megvalósítás: 1. fázis – adatgyűjtés + dashboard               [döntve 2026-06-21]
+Értesítés:    Email (kötelező) + SMS (javasolt)                [2. fázis]
+Dashboard:    Grafana + web UI (1. fázis)                       [folyamatban]
 Mobilapp:     Még nem döntött                                  [nyitott]
 GDPR:         Még nem vizsgált                                 [nyitott]
 EMQX auth:    Még nem döntött                                  [nyitott]
+LLM chat:     Később – csak adatmegjelenítő réteg              [döntve 2026-06-21]
 ```
+
+→ Részletes fázisok: [`megvalositasi-terv.md`](megvalositasi-terv.md)
 
 ---
 
@@ -83,11 +87,11 @@ EMQX auth:    Még nem döntött                                  [nyitott]
 - [x] **SIM kártya stratégia** – 1NCE IoT SIM kártyák (következő fázishoz)
 - [ ] **Eszközcsalád pontosítása** – hőmérséklet/páratartalom, relé, mozgásérzékelő ismert; ventilátor + gépmoniror új termékként szóba jött
 - [x] **Csapat technológiai ismerete** – Python/FastAPI stack kiválasztva
-- [ ] **MVP scope meghatározása** – mi kell az első pilot induláshoz minimálisan
+- [ ] **MVP scope meghatározása** – 1. fázis: adatgyűjtés + dashboard → [`megvalositasi-terv.md`](megvalositasi-terv.md)
 - [ ] **GDPR / adatvédelem** – szerbiai vs EU adattárolás jogi vizsgálata szükséges
 - [ ] **EMQX autentikáció** – eszköz azonosítási módszer kiválasztása
 - [ ] **Mobilalkalmazás / provisioning döntés** – web UI, PWA vagy natív? Bluetooth/NFC alapú telepítési segéd vizsgálva (lásd `termek-otletek.md` – Bluetooth/NFC provisioning fejezet): rövidtávon Tasmota AP mód elegendő; középtávon webes konfigurátor + QR/NFC tag javasolt
-- [ ] **Dashboard döntés** – Grafana, egyedi, vagy csak riasztás?
+- [ ] **Dashboard** – Grafana + web UI az 1. fázisban (adatmegjelenítés)
 - [ ] **GitHub migráció** – projekt repo létrehozása, Obsidian Git plugin, csapat hozzáférés (Sogi, Robi, Alfréd)
 - [ ] **Projektmenedzsment eszköz** – kiválasztás és beállítás
 - [ ] **Robi szervere** – Bálint megvizsgálja, megfelelő-e a SmartBlue stack-nek

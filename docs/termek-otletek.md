@@ -317,6 +317,8 @@ Az eszközre nyomtatott QR kód → SmartBlue webes konfigurátor előre kitölt
 
 > Ötlet (2026-06-21): a kihelyezett szenzorokból érkező adatokat AI agent-tel dolgozzuk fel, és a beérkező mérésekből következtetéseket, előrejelzéseket vonunk le.
 
+> **Megvalósítási elv:** az LLM chat **csak adatmegjelenítő réteg** – a dashboard alternatívája, nem helyettesíti a szabályzást vagy eszközvezérlést. Részletek: [`megvalositasi-terv.md`](megvalositasi-terv.md). **1. fázisban még nincs LLM UI** – előbb adatgyűjtés.
+
 ### Első jelölt: Hermes Agent
 
 A [Hermes Agent](https://github.com/NousResearch/hermes-agent) az első vizsgált megoldás – nyílt forráskódú AI agent keretrendszer, amely eszközökhöz és adatforrásokhoz csatlakozva képes elemzést és válaszadást végezni.
