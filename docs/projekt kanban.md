@@ -16,6 +16,7 @@ kanban-plugin: board
 - [ ] AI paraméterezés + Node-RED multi-user megoldás vizsgálata
 - [ ] Panic button kibővítés – LD2410C jelenlét + AI szokásprofil
 - [ ] BLE személy-érzékelés ötlet kidolgozása (scan, whitelist, adatvédelem)
+- [ ] IoT router modell kiválasztása – előre konfigurált, ügyfélnek (több projekt esetén)
 - [ ] Email értesítés Soginak Switch/PIR eseményre (`zsoltorigo@gmail.com`)
 - [ ] PIR szenzor éles teszt (Sogi helyszínen)
 - [ ] MVP scope meghatározása – 1. fázis: adatgyűjtés + dashboard

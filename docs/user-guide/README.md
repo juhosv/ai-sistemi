@@ -736,9 +736,12 @@ CONFIG tab
 ### Az eszköz nem csatlakozik a WiFi-hez
 
 1. Ellenőrizd az SSID-t és jelszót – kis/nagybetű érzékeny!
-2. Az **ESP8266 csak 2.4 GHz-es hálózathoz** tud csatlakozni, nem 5 GHz-eshez
-3. Ellenőrizd, hogy a router nem rejtette-e el az SSID-t (hidden network)
-4. A soros logban `WIF:` kezdetű sorok mutatják a WiFi kapcsolódási folyamatot:
+2. Az **ESP8266/ESP32 csak 2.4 GHz-es hálózathoz** tud csatlakozni, nem 5 GHz-eshez
+3. **Band steering / egy SSID 2,4+5 GHz:** sok router egy név alatt adja a két sávot – a Tasmota eszközök ezt **nem szeretik**. Megoldás: külön guest WiFi vagy dedikált 2,4 GHz SSID → részletek: [`docs/kommunikacio.md`](../kommunikacio.md) – Router beállítás
+4. Ellenőrizd, hogy a router nem rejtette-e el az SSID-t (hidden network)
+5. **WPA3-only** hálózat nem működik – használj **WPA2-Personal**-t, WPA3 kikapcsolva az IoT SSID-n
+6. **Csatornaszélesség:** 20 MHz ajánlott (40 MHz instabil lehet)
+7. A soros logban `WIF:` kezdetű sorok mutatják a WiFi kapcsolódási folyamatot:
    - `WIF: Connecting to AP` → megpróbál csatlakozni
    - `WIF: Connected` → sikeres, IP-t kap
    - `WIF: Connect failed` → helytelen jelszó vagy hálózat nem elérhető

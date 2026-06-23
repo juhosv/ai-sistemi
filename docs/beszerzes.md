@@ -103,6 +103,45 @@ Forrás: `hestore_20260528.xml`
 
 ---
 
+### pH mérés (2026-06-21)
+
+> **Megjegyzés:** A tervezett **SOIL-H-T-EC-RS485** (3-in-1) **nem mér pH-t**. Ha pH is kell, külön megoldás szükséges.
+
+#### A) Talaj pH – RS485 (mezőgazdaság / fólia sátor)
+
+| Hestore | Termék | Mér | Ár (1+ db, nettó) | Raktár | Javaslat |
+|---------|--------|-----|------------------|--------|----------|
+| [prod_10046391](https://www.hestore.hu/prod_10046391.html) | **JXBS-3001-NPK-RS** | 7-in-1: nedvesség, hő, EC, **pH**, N, P, K | **37 463 Ft** | > 5 | Ha kell talaj pH – drágább; NPK/pH pontosság kérdéses |
+
+**pH paraméterek (JXBS-3001-NPK-RS):** tartomány 3…9 pH, pontosság ±0,3 pH, válaszidő ≤10 s, RS485 Modbus.
+
+- Ehhez szintén kell **MAX485-M** (~365 Ft) az ESP32-hez
+- **Alternatíva:** marad a 3-in-1 (SOIL-H-T-EC) + később döntés pH-ről
+
+#### B) Folyadék pH – ESP32 + analóg (akvárium, hidroponika, labor)
+
+> **Nem** alkalmas közvetlen talajba merítésre – vizes oldatokra (E-201 üveg elektróda).
+
+| Hestore | Termék | Ár (1+ db, nettó) | Raktár | Megjegyzés |
+|---------|--------|-------------------|--------|------------|
+| [prod_10047969](https://www.hestore.hu/prod_10047969.html) | **EQV-PH-BRD** – pH modul alappanel (0…14 pH, analóg PO kimenet) | **2 548 Ft** | > 20 | ESP32 ADC / Tasmota egyedi |
+| [prod_10047971](https://www.hestore.hu/prod_10047971.html) | **EQV-PH-E-201** – pH elektróda, BNC | **3 565 Ft** | > 50 | BRD-hez kötelező pár |
+
+**Összesen (BRD + elektróda): ~6 113 Ft** – kísérleti / folyadék méréshez.
+
+#### C) pH kalibrálás (BRD + E-201 használatához ajánlott)
+
+| Hestore | Termék | Ár (1+ db, nettó) | Raktár |
+|---------|--------|-------------------|--------|
+| [prod_10042230](https://www.hestore.hu/prod_10042230.html) | PH-TEST-401 – kalibráló por (pH 4.01) | 252 Ft | > 150 |
+| [prod_10042231](https://www.hestore.hu/prod_10042231.html) | PH-TEST-686 – kalibráló por (pH 6.86) | 285 Ft | > 350 |
+| [prod_10042232](https://www.hestore.hu/prod_10042232.html) | PH-TEST-918 – kalibráló por (pH 9.18) | 270 Ft | > 200 |
+| [prod_10043222](https://www.hestore.hu/prod_10043222.html) | DEIONIZED-1000 – desztillált víz 1 l (pufferoldathoz) | **1 208 Ft** | > 15 |
+
+> Minimum **2 pontos kalibráció** (pl. pH 7 + pH 4) friss pufferoldattal – elektróda hidratálása szükséges.
+
+---
+
 ### Jelenlét érzékelő (nem PIR)
 
 > **Igény (2026-06-21):** **jelenlét érzékelő** kell, **nem mozgásérzékelő** (PIR). Statikus ember is érzékelendő.
@@ -137,3 +176,21 @@ Forrás: `hestore_20260528.xml`
 | **Összesen** | | | **~14 504 Ft** |
 
 Opcionális: USB-RS485 (613 Ft) – szonda PC-s teszteléshez a firmware fejlesztés alatt.
+
+### IoT router (ügyfélnek, előre konfigurálva)
+
+> **Ötlet (2026-06-21):** Több projekt esetén érdemes **olcsó, 2,4 GHz-képes routert** adni az ügyfélnek, előre SmartBlue-kompatibilis beállítással – így nem kell az ügyfél routerén harcolni (band steering, WPA3, IT).
+
+| Követelmény | Megjegyzés |
+|-------------|------------|
+| 2,4 GHz | Kötelező – külön SSID vagy legalább külön 2,4 GHz hálózat |
+| WPA2-Personal | WPA3 kikapcsolható legyen |
+| 20 MHz csatorna | Beállítható legyen |
+| Ár | Viszonylag olcsó – nem kell mesh / WiFi 6 |
+| WAN port | Csatlakozás az ügyfél internetjéhez |
+
+| Státusz | Modell | Ár | Megjegyzés |
+|---------|--------|-----|------------|
+| **Vizsgálandó** | – | – | Konkrét típus kiválasztandó (TP-Link, stb.) |
+
+---

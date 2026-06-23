@@ -95,6 +95,7 @@ Restart 1       # újraindítás
 ### WiFi
 - SSID1/Jelszó1 – elsődleges hálózat
 - SSID2/Jelszó2 – tartalék hálózat (opcionális)
+- **Router:** dedikált 2,4 GHz SSID ajánlott – ne egy név alatt 2,4+5 GHz (band steering) → [`kommunikacio.md`](kommunikacio.md)
 
 ### MQTT
 - Host, Port, User, Jelszó (üres = névtelen kapcsolat)

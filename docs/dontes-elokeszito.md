@@ -1,8 +1,44 @@
 # Döntés-előkészítő összefoglaló
 
-## Státusz: Részlegesen döntve – 2026-05-19
+## Státusz: Részlegesen döntve – 2026-05-19 (firmware felülvizsgálat: 2026-06-23)
 
 Ez a dokumentum összefoglalja a nyitott döntési pontokat és a javasolt következő lépéseket.
+
+---
+
+## Firmware – FELÜLVIZSGÁLAT ALATT ⚠
+
+| | Tasmota (eddigi) | ESPHome (valószínű irány) |
+|---|------------------|---------------------------|
+| Státusz | Pilot teszt sikeres (2026-05-27) | Döntés előkészítés (2026-06-23) |
+| Konfiguráció | Eszközönkénti WebUI | Központi YAML + OTA |
+| Flotta / multi-tenant | Nehézkes | Packages + saját backend provisioning |
+| MQTT | `cmnd/stat/tele` – döntve | Saját topic séma – **definiálandó** |
+| HA szükséges? | Nem | Nem (MQTT mód) |
+
+→ Részletes elemzés, összehasonlítás, választott architektúra: [`firmware-esphome-dontes.md`](firmware-esphome-dontes.md)
+
+**Előzetes javaslat:** ESPHome + **ThingsBoard CE** (ön-hosztolt, ingyenes licenc). A Tasmota teszt és tooling megmarad referenciának.
+
+→ Szerver részletek: [`thingsboard-dontes.md`](thingsboard-dontes.md)
+
+---
+
+## Szerver platform – FELÜLVIZSGÁLAT ALATT ⚠
+
+| | FastAPI stack (eddigi) | ThingsBoard (valószínű irány) |
+|---|------------------------|-------------------------------|
+| Státusz | Döntve 2026-05-19 | Döntés előkészítés 2026-06-23 |
+| MQTT | EMQX külön | Beépített vagy EMQX |
+| Backend | FastAPI + aiomqtt | ThingsBoard beépített |
+| Dashboard | Grafana + saját web UI | **TB vizuális dashboard** |
+| Multi-tenant | Saját fejlesztés | **Customers, Assets, Roles** |
+| FOTA | Saját fejlesztés | **Beépített OTA** |
+| Licenc | – | **CE ingyenes** (Apache 2.0) |
+
+→ Részletes elemzés: [`thingsboard-dontes.md`](thingsboard-dontes.md)
+
+**Előzetes javaslat:** ThingsBoard **CE** + ESPHome (MQTT), saját VPS (~5–15 EUR/hó). A korábbi FastAPI/InfluxDB stack felülvizsgálat alatt.
 
 ---
 
@@ -29,17 +65,19 @@ Ez a dokumentum összefoglalja a nyitott döntési pontokat és a javasolt köve
 
 ---
 
-## Szerver backend – DÖNTVE ✓
+## Szerver backend – FELÜLVIZSGÁLAT ALATT ⚠
 
-| Komponens | Döntés | Megjegyzés |
-|-----------|--------|------------|
-| MQTT Broker | **EMQX** | Dashboard, Rule Engine, TLS, skálázható |
-| Backend framework | **FastAPI** (Python) | Async, Pydantic, OpenAPI |
-| MQTT kliens (backend) | **aiomqtt** | Async, asyncio-kompatibilis |
-| Relációs adatbázis | **PostgreSQL** | Eszközök, konfig, riasztások, felhasználók |
-| Idősor adatbázis | **InfluxDB** | Mérési adatok, retention policy-val |
+| Komponens | Eddigi döntés (2026-05-19) | ThingsBoard irány (2026-06-23) |
+|-----------|----------------------------|--------------------------------|
+| IoT platform | FastAPI (saját) | **ThingsBoard CE** (ingyenes, ön-hosztolt) |
+| MQTT Broker | EMQX | TB beépített **vagy** EMQX – döntendő |
+| Backend framework | FastAPI + aiomqtt | TB beépített (+ opcionális microservice) |
+| Adattárolás | PostgreSQL + InfluxDB | TB saját DB (PostgreSQL/Cassandra) |
+| Dashboard | Grafana + web UI | **TB dashboard** |
 
-→ Részletes architektúra: [`szerver-architektura.md`](szerver-architektura.md)
+→ Korábbi architektúra: [`szerver-architektura.md`](szerver-architektura.md)  
+→ Új döntési folyamat: [`thingsboard-dontes.md`](thingsboard-dontes.md)  
+→ **Megvalósítási lépések:** [`thingsboard-megvalositas.md`](thingsboard-megvalositas.md)
 
 ---
 
@@ -57,20 +95,19 @@ Ez a dokumentum összefoglalja a nyitott döntési pontokat és a javasolt köve
 ## Összesített stack – pilot fázis
 
 ```
-Eszköz:       ESP32 WiFi (Tasmota firmware)                    [döntve]
+Eszköz:       ESP32 WiFi (Tasmota → ESPHome?)                  [felülvizsgálat]
 Kommunikáció: WiFi – beltéri helyszínek, garantált lefedettség [döntve]
-GSM (2. fáz): 1NCE IoT SIM kártyák                            [döntve]
-Protokoll:    MQTT – Tasmota konvenció (cmnd / stat / tele)    [döntve]
+GSM (2. fáz): 1NCE IoT SIM – **4G router + ESPHome** vagy TinyGSM FW  [döntendő]
+Protokoll:    MQTT – Tasmota konvenció (cmnd / stat / tele)    [döntve; ESPHome esetén új séma]
 Topic névkon: MAC-suffix only (pl. A1B2C3), firmware-agnosztikus + emberi név az adatbázisban   [döntve]
 TelePeriod:   300 mp (5 perc)                                  [döntve]
-MQTT Broker:  EMQX (alapért. FullTopic struktúra)              [döntve]
-Backend:      Python / FastAPI + aiomqtt                       [döntve]
-Relációs DB:  PostgreSQL (SQLAlchemy async + Alembic)          [döntve]
-Idősor DB:    InfluxDB                                         [döntve]
-Üzemeltetés: Saját csapat – VPS + Docker Compose              [döntve]
+MQTT Broker:  EMQX vagy ThingsBoard beépített                   [felülvizsgálat]
+Backend:      ThingsBoard (volt: FastAPI + aiomqtt)             [felülvizsgálat]
+Adattárolás:  ThingsBoard DB (volt: PostgreSQL + InfluxDB)     [felülvizsgálat]
+Üzemeltetés: Saját csapat – VPS + Docker Compose (TB CE)     [előzetes]
 Megvalósítás: 1. fázis – adatgyűjtés + dashboard               [döntve 2026-06-21]
 Értesítés:    Email (kötelező) + SMS (javasolt)                [2. fázis]
-Dashboard:    Grafana + web UI (1. fázis)                       [folyamatban]
+Dashboard:    ThingsBoard (volt: Grafana + web UI)              [felülvizsgálat]
 Mobilapp:     Még nem döntött                                  [nyitott]
 GDPR:         Még nem vizsgált                                 [nyitott]
 EMQX auth:    Még nem döntött                                  [nyitott]
@@ -84,13 +121,15 @@ LLM chat:     Később – csak adatmegjelenítő réteg              [döntve 2
 ## Következő lépések
 
 - [x] **Helyszín felmérés** – beltéri, WiFi garantált
-- [x] **SIM kártya stratégia** – 1NCE IoT SIM kártyák (következő fázishoz)
+- [ ] **GSM 2. fázis firmware** – 4G router + ESPHome vs. TinyGSM egyedi → [`kommunikacio.md`](kommunikacio.md#esphome-és-gsm--fontos-korlát-2026-06-23)
 - [ ] **Eszközcsalád pontosítása** – hőmérséklet/páratartalom, relé, mozgásérzékelő ismert; ventilátor + gépmoniror új termékként szóba jött
 - [x] **Csapat technológiai ismerete** – Python/FastAPI stack kiválasztva
 - [ ] **MVP scope meghatározása** – 1. fázis: adatgyűjtés + dashboard → [`megvalositasi-terv.md`](megvalositasi-terv.md)
 - [ ] **GDPR / adatvédelem** – szerbiai vs EU adattárolás jogi vizsgálata szükséges
 - [ ] **EMQX autentikáció** – eszköz azonosítási módszer kiválasztása
-- [ ] **Mobilalkalmazás / provisioning döntés** – web UI, PWA vagy natív? Bluetooth/NFC alapú telepítési segéd vizsgálva (lásd `termek-otletek.md` – Bluetooth/NFC provisioning fejezet): rövidtávon Tasmota AP mód elegendő; középtávon webes konfigurátor + QR/NFC tag javasolt
+- [ ] **Szerver platform döntés** – ThingsBoard vs FastAPI stack véglegesítése → [`thingsboard-dontes.md`](thingsboard-dontes.md)
+- [ ] **Firmware döntés** – ESPHome vs Tasmota véglegesítése → [`firmware-esphome-dontes.md`](firmware-esphome-dontes.md)
+- [ ] **Mobilalkalmazás / provisioning döntés** – választott irány: saját backend + szerelői felület (ESPHome Captive Portal Wi-Fi-hez); részletek: [`firmware-esphome-dontes.md`](firmware-esphome-dontes.md)
 - [ ] **Dashboard** – Grafana + web UI az 1. fázisban (adatmegjelenítés)
 - [ ] **GitHub migráció** – projekt repo létrehozása, Obsidian Git plugin, csapat hozzáférés (Sogi, Robi, Alfréd)
 - [ ] **Projektmenedzsment eszköz** – kiválasztás és beállítás

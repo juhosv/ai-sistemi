@@ -26,6 +26,88 @@ Az ESP32-alapú eszközcsaládban két kommunikációs módot vizsgálunk. Mindk
 - Gyárban, raktárban, ahol van WiFi infrastruktúra
 - Olyan helyszínek, ahol az ügyfél garantálja a WiFi lefedettséget
 
+### Router beállítás – Tasmota / ESP32 kompatibilitás
+
+> **Tapasztalat (2026-06-21):** A Tasmota eszközök **2,4 GHz-es WiFi-n** kommunikálnak (IEEE 802.11 b/g/n). **Nem szeretik**, ha a router úgy van beállítva, hogy **egy SSID név alatt** egyszerre elérhető a **2,4 GHz és a 5 GHz** is (band steering / „smart connect"). Ilyen hálózaton az eszközök gyakran instabilak, nem csatlakoznak, vagy időnként leesnek.
+
+Ha ilyen routerrel találkozunk a helyszínen, **érdemes külön hálózatot** létrehozni az IoT eszközöknek. Két lehetséges megoldás:
+
+| Megoldás | Leírás |
+|----------|--------|
+| **Guest WiFi** | Külön vendég hálózat **külön SSID névvel** – ha a router támogatja, csak 2,4 GHz-re korlátozva |
+| **Második SSID** | Ha a router támogatja a külön WiFi hálózat létrehozását, dedikált SSID az eszközöknek |
+
+#### Ajánlott beállítások (dedikált IoT SSID)
+
+| Beállítás | Érték | Megjegyzés |
+|-----------|-------|------------|
+| **Sáv** | Csak **2,4 GHz** | Az ESP32/ESP8266 nem tud 5 GHz-re csatlakozni |
+| **Biztonság** | **WPA2-Personal** | Tasmota-kompatibilis |
+| **WPA3** | **Kikapcsolva** ennél a hálózatnál | WPA3-only hálózaton sok IoT eszköz nem működik |
+| **Csatornaszélesség** | **20 MHz** | 40 MHz széles csatorna instabilitást okozhat IoT-nál |
+| **SSID elrejtése** | **Nem** (hidden SSID off) | Rejtett SSID nehezíti a csatlakozást és újracsatlakozást |
+| **Jelszó** | **Külön jelszó** | Ne ugyanaz legyen, mint a fő hálózat jelszava |
+
+#### Telepítési gyakorlat
+
+1. Helyszíni WiFi szkennelés (Tasmota Manager `WifiScan`, vagy eszköz AP mód) – melyik SSID látszik, milyen jelerősséggel
+2. Ha csak egy kombinált SSID van → kérjük az ügyfelet / IT-t a fenti dedikált 2,4 GHz hálózat létrehozására
+3. Tasmota **SSID1** = dedikált IoT hálózat; **SSID2** = opcionális tartalék (pl. mobil hotspot)
+4. Dokumentálni: SSID név, jelszó, router típus, ki állította be
+
+→ Tasmota Manager WiFi szkennelés: [`user-guide/README.md`](user-guide/README.md) – Config / WiFi fejezet
+
+#### Saját router az ügyfélnek (több projekt esetén)
+
+> **Ötlet (2026-06-21):** Ha **több projekt** készül (több helyszín, több ügyfél), érdemes elgondolkodni azon, hogy **mi adjunk az ügyfélnek egy routert**, amely **előre úgy van beállítva**, hogy a SmartBlue / Tasmota eszközöknek megfelelő legyen.
+
+**Miért érdemes?**
+
+| Probléma ma | Saját routerrel |
+|-------------|-----------------|
+| Ügyfél routere band steeringgel (2,4+5 GHz egy SSID) | Előre konfigurált, csak 2,4 GHz IoT SSID |
+| IT nem enged új SSID-t / nem ért hozzá | Mi telepítjük, mi ismerjük a beállításokat |
+| Minden helyszín más WiFi környezet | Egységes, ismert konfiguráció minden pilotnál |
+| Telepítési idő: router beállítás helyszínen | Plug-and-play – csak bedugni, eszközök már jó SSID-re vannak konfigurálva |
+
+**Milyen router kell?**
+
+- **Viszonylag olcsó** modell is elég – a lényeg, hogy **megbízhatóan tudja a 2,4 GHz-et** (külön SSID vagy legalább külön 2,4 GHz hálózat)
+- Nem kell drága mesh / WiFi 6 – IoT eszközök alacsony sávszélességet igényelnek
+- Előnyös, ha: külön SSID létrehozható, WPA2, 20 MHz csatorna, nincs kényszerített WPA3
+
+**Telepítési modell (tervezett)**
+
+```
+[Ügyfél meglévő internet] ──► WAN ──► [SmartBlue IoT router]
+                                              │
+                                              │ 2,4 GHz WiFi
+                                              │ SSID: SmartBlue-IoT-XXXX
+                                              ▼
+                                        [ESP32 eszközök]
+```
+
+- A router **WAN porton** csatlakozik az ügyfél hálózatához (internet + opcionálisan elérés a szerver felé)
+- Az eszközök **csak a mi IoT WiFi-nkre** kapcsolódnak – elkülönülnek az ügyfél fő hálózatától
+- SSID/jelszó **projektenként** vagy **ügyfelenként** egyedi lehet (pl. utolsó 4 karakter a helyszín kódjából)
+
+**Gyártás / előkészítés (Zsolti / telepítő):**
+
+1. Router kiválasztása, beszerzés (tömeges, egységes típus)
+2. Előre beállítás: 2,4 GHz SSID, WPA2, 20 MHz, WPA3 off, DHCP
+3. SSID + jelszó dokumentálása → Tasmota eszközök SSID1 mezője már ezt kapja (Tasmota Manager profil)
+4. Helyszínen: bedugás, WAN bekötés, teszt
+
+**Nyitott kérdések**
+
+- [ ] Konkrét router modell / ár (Hestore, TP-Link, stb.)?
+- [ ] Hány db készleten tartani?
+- [ ] Az ügyfélnek marad a router, vagy kölcsön / bérleti modell?
+- [ ] Szerbiai tápellátás / csatlakozó (EU plug)?
+- [ ] VLAN / elkülönítés szükséges-e az ügyfél IT-től?
+
+→ Beszerzési jelöltek: [`beszerzes.md`](beszerzes.md)
+
 ---
 
 ## 2. GSM 4G kommunikáció
@@ -54,6 +136,42 @@ Az ESP32-alapú eszközcsaládban két kommunikációs módot vizsgálunk. Mindk
 - Lefedettségi fehér foltok terepi területeken
 - Modul és ESP32 közötti kommunikáció (UART/AT parancsok) extra fejlesztési komplexitás
 
+### ESPHome és GSM – fontos korlát (2026-06-23)
+
+Az ESPHome architektúráját (és a Native API-t) **folyamatos, nagy sávszélességű helyi hálózatra** (Wi-Fi, Ethernet) tervezték. A GSM/LTE mint **elsődleges internetkapcsolat** az ESPHome gyári komponenseivel **nem támogatott**.
+
+→ Részletes firmware szempontok: [`firmware-esphome-dontes.md`](firmware-esphome-dontes.md#gsm-kommunikáció--esphome-korlátok)
+
+#### Mit tud az ESPHome natívan?
+
+| Funkció | Támogatás | Példa modul |
+|---------|-----------|-------------|
+| SMS küldés/fogadás | ✓ | SIM800L |
+| Hívás észlelés (Caller ID) | ✓ | SIM800L |
+| USSD lekérdezés | ✓ | SIM800L |
+| **GPRS/4G adatforgalom (MQTT/IP)** | **✗ gyári komponens nincs** | – |
+
+Az ESPHome **nem használja a GSM modult IP gateway-ként** – a beépített MQTT kliens így **nem tud mobilneten** csatlakozni a ThingsBoard szerverhez.
+
+**SMS-re alkalmas:** riasztás áramszünetkor, SMS paranccsal relé kapcsolás – ezekhez az ESPHome SIM800L komponense megfelelő.
+
+#### GSM adatkapcsolat ThingsBoard-hoz – három út
+
+| # | Megoldás | Firmware | Előny | Hátrány |
+|---|----------|----------|-------|---------|
+| **1** | **Arduino/C++ + TinyGSM** | Egyedi (nem ESPHome) | Natív 4G/LTE (SIM7600, A7670); tiszta MQTT JSON → ThingsBoard | Nincs YAML, nincs Captive Portal |
+| **2** | **Külső 4G Wi-Fi router** | **ESPHome** (változatlan) | Megmarad Captive Portal, OTA, sablon flotta; ESP Wi-Fi-n csatlakozik a routerre | Extra hardver + SIM a routerben |
+| **3** | **ESPHome custom_component** | ESPHome + C++ | Elméletileg összekapcsolható | Komoly fejlesztés; elveszik a kódmentes egyszerűség |
+
+**1. megoldás részletei:** pl. LilyGO T-Call ESP32 (gyári SIM foglalat) + [TinyGSM](https://github.com/vshymanskyy/TinyGSM) – APN beállítás, MQTT kliens, ugyanaz a ThingsBoard üzenetformátum, mint Wi-Fi-s ESPHome eszközöknél.
+
+**2. megoldás (javasolt, ha ESPHome marad):** ipari vagy olcsó USB 4G modem/router a helyszíni dobozban; az ESP továbbra is a meglévő Wi-Fi sablonnal működik.
+
+**SmartBlue stratégia (előzetes):**
+- **1. fázis / pilot:** Wi-Fi (beltéri, garantált lefedettség) – ESPHome
+- **2. fázis / terepi:** GSM helyszíneken **4G router + ESPHome** vagy **TinyGSM egyedi firmware** – döntés helyszínenként
+- **SMS riasztás:** ESPHome SIM800L komponens kiegészítésként (nem adatcsatorna)
+
 ---
 
 ## 3. WiFi hatótávolság növelés – külső antenna
@@ -75,6 +193,18 @@ Ha a helyszínen van WiFi, de az eszköz telepítési pontja (pl. gépterem sark
 
 Az ESP32 modulok közül az **ESP32-WROOM-32U** vagy **ESP32-S3-WROOM-1U** változat választásával azonos kódbázis mellé cserélhető az antenna – ez minimális ráfordítással megoldja a gyenge jel problémájának nagy részét.
 
+### LoRa – nem Wi-Fi repeater
+
+Ha a Wi-Fi hatótáv **több száz méter – kilométer** kell, a **LoRa** alternatíva – de **nem hosszabbítja a Wi-Fi jelet**. Különálló rádiócsatorna (EU: **868 MHz**), más fizika:
+
+| | Wi-Fi | LoRa |
+|---|-------|------|
+| Tipikus hatótáv (falak között) | 20–50 m | 100–500 m (épületben); **1–5 km** szabad területen |
+| Áthaladás | Gyenge fém/vastag falnál | Jobb – szub-GHz |
+| Szerep | Internet / MQTT közvetlenül | Csak **helyi rádió** → gateway → MQTT |
+
+→ Részletes ESPHome + ThingsBoard felépítés: [LoRa szekció](#4-lora-kommunikáció), [`firmware-esphome-dontes.md`](firmware-esphome-dontes.md#lora--hatótáv-növelés-esphome--thingsboard)
+
 ---
 
 ## 4. LoRa kommunikáció
@@ -83,39 +213,79 @@ Az ESP32 modulok közül az **ESP32-WROOM-32U** vagy **ESP32-S3-WROOM-1U** vált
 
 A **LoRa** (Long Range) rádió moduláció, amelyet az IoT eszközök számára fejleszttek ki. Az LPWAN (Low Power Wide Area Network) kategóriába tartozik. Fő tulajdonságai:
 
-- **Hatótávolság:** szabad területen 5–15 km, városban 1–3 km (épületen belül 100–500 m)
+- **Hatótávolság:** szabad területen 1–5 km (line-of-sight akár 5–15 km), városban 1–3 km; épületen belül 100–500 m
+- **Wi-Fi-hez képest:** **nem repeater** – külön 868 MHz-es rádió; Wi-Fi falak között gyakran 20–50 m, LoRa km-es távolságot is áthidal
 - **Áramfogyasztás:** rendkívül alacsony (sleep módban µA szint)
 - **Sávszélesség:** nagyon alacsony (250 bps – 50 kbps) – csak kis adatcsomagok
 - **Frekvencia:** Európában 868 MHz (licence-mentes ISM sáv)
-- **Protokoll:** LoRa (fizikai réteg) + **LoRaWAN** (hálózati protokoll, szerver oldal)
+- **Protokoll:** LoRa (fizikai réteg); felette **ESPHome Packet Transport** (pont-pont) vagy **LoRaWAN** (hálózati réteg)
+
+### ESPHome + ThingsBoard: Gateway–Node architektúra (2026-06-23)
+
+A LoRa modulok **nem kapnak IP-címet** – nem csatlakoznak közvetlenül MQTT brókerhez. **Mester–szolga (Gateway–Node)** felépítés:
+
+```
+Távoli szenzor (Node)              Központi átjáró (Gateway)           Szerver
+ESP32 + LoRa (SX1262/1276)         ESP32 + LoRa + Wi-Fi                 ThingsBoard CE
+     │ méri: hő, PWM stb.                │                                  │
+     │ LoRa rádió (868 MHz)              │                                  │
+     └──────── adatcsomag ──────────────►│ fogad                            │
+                                         │ Wi-Fi / Ethernet                 │
+                                         └──────── MQTT ───────────────────►│
+```
+
+| Szerep | Hol | Firmware |
+|--------|-----|----------|
+| **Node** | Mező, pince, kert vége, fémkonténer | ESPHome – mér, **1–5 percenként** küld rövid csomagot |
+| **Gateway** | Főépület – ahol van Wi-Fi | ESPHome – LoRa fogad, **MQTT** továbbít TB-re |
+
+**ESPHome natív támogatás:** SX126x / SX127x chip komponensek + **Packet Transport** platform – két ESPHome eszköz LoRa-n beszélget, szenzorértékek automatikusan átmennek az átjáróra, C++ kód nélkül.
+
+→ [`firmware-esphome-dontes.md`](firmware-esphome-dontes.md#lora--hatótáv-növelés-esphome--thingsboard)
 
 ### Mikor érdemes LoRa-t használni
 
 | Szituáció | WiFi | GSM | LoRa |
 |-----------|------|-----|------|
-| Épületen belül, WiFi van | ✅ | – | – |
+| Épületen belül, WiFi van, de távoli pont (200+ m) | ⚠️ repeater | – | **✅** |
 | Épületen belül, nincs WiFi | – | ✅ | ⚠️ gyenge |
 | Terepi, van mobilnet | – | ✅ | – |
 | Terepi, **nincs mobilnet** | – | – | ✅ |
 | Nagy terület, saját hálózat | – | – | ✅ |
 | Akkumulátoros, ritkán küld | ✅ | ⚠️ | ✅ |
 
-**A LoRa legjobb felhasználási esete a SmartBlue projektben:** olyan terepi helyszínek, ahol sem WiFi, sem mobilnet nincs megbízhatóan, de saját LoRa gateway telepíthető (pl. egy gyártelep, raktárcsarnok, mezőgazdasági terület).
+**SmartBlue felhasználási esetek:**
+- Terepi helyszín, nincs megbízható GSM – saját LoRa gateway a főépületben
+- **Egy telephely:** Wi-Fi a főépületben, szenzor 200 m-re (kert, konténer, szomszéd épület) – LoRa node + egy gateway
+- Mezőgazdasági terület – több node, egy-két gateway
 
 ### ESP32 + LoRa hardver lehetőségek
 
 | Modul / Board | Leírás | Megjegyzés |
 |---------------|--------|------------|
-| **Heltec WiFi LoRa 32 (V3)** | ESP32-S3 + SX1262 LoRa + OLED kijelző, egységes board | Legelterjedtebb, Tasmota és Arduino támogatás |
-| **TTGO LoRa32** | ESP32 + SX1276/SX1278 LoRa + OLED | Olcsó, elterjedt |
-| **RAK4631 (WisBlock)** | nRF52840 + SX1262, moduláris rendszer | Prémium, de nem ESP32 |
-| **ESP32 + SX1276 breakout** | Szeparált modulok összekötve SPI-n | Nagyobb rugalmasság, de több összekötés |
+| **Heltec WiFi LoRa 32 (V3)** | ESP32-S3 + SX1262 + OLED | Legelterjedtebb; Wi-Fi **és** LoRa egy lapon – gateway vagy node |
+| **LilyGO T-Beam / T-Echo** | ESP32 + LoRa + opcionális GPS | Terepi, akkumulátoros node-hoz |
+| **TTGO LoRa32** | ESP32 + SX1276/SX1278 + OLED | Olcsó, elterjedt |
+| **RAK4631 (WisBlock)** | nRF52840 + SX1262 | Prémium, de nem ESP32 |
+| **ESP32 + SX1276 breakout** | SPI összekötés | Egyedi NYÁK-hoz |
 
-> A **Heltec WiFi LoRa 32** különösen érdekes: egyszerre van rajta WiFi **és** LoRa, így az eszköz WiFi-vel kommunikál ahol van jel, LoRa-val ahol nincs – egyetlen hardver, hibrid kommunikáció.
+> **Heltec WiFi LoRa 32:** ideális **gateway** – Wi-Fi + LoRa egy boardon. Távoli **node** lehet egyszerűbb LoRa-only board (alacsonyabb fogyasztás).
 
-### LoRaWAN szerver infrastruktúra
+### Két út a szerverig
 
-LoRaWAN hálózathoz kell:
+#### A) ESPHome Packet Transport (javasolt SmartBlue + ThingsBoard-hoz)
+
+```
+Node (ESPHome) ──LoRa──► Gateway (ESPHome) ──MQTT──► ThingsBoard CE
+```
+
+- Nincs külön LoRaWAN Network Server
+- Ugyanaz a toolchain, mint Wi-Fi-s flottánál
+- Gateway ESPHome YAML + MQTT konfig
+
+#### B) LoRaWAN infrastruktúra (alternatíva)
+
+LoRaWAN hálózathoz külön network server kell:
 
 ```
 Eszköz (ESP32+LoRa)
@@ -127,10 +297,12 @@ Gateway (LoRa → Ethernet/LTE)
 Network Server (The Things Network / Chirpstack / egyedi)
     │ MQTT / HTTP webhook
     ▼
-SmartBlue Backend (FastAPI + MQTT)
+ThingsBoard CE (MQTT)
 ```
 
-**Opciók a Network Serverre:**
+> **Megjegyzés:** A korábbi diagram FastAPI backendre hivatkozott – ThingsBoard irányban a gateway MQTT végpontja a TB.
+
+**Opciók a Network Serverre (csak LoRaWAN útnál):**
 
 | Opció | Leírás | Költség |
 |-------|--------|---------|
@@ -143,12 +315,18 @@ SmartBlue Backend (FastAPI + MQTT)
 - Saját gateway: RAK7268 (~150 €), RAK7289 outdoor (~250 €)
 - Indoor gateway: RAK7243 vagy Dragino LPS8 (~100 €)
 
-### Korlátok – mikor nem jó a LoRa
+### Korlátok és kompromisszumok
 
-- **Kis sávszélesség:** OTA firmware frissítés LoRa-n keresztül nem praktikus (lassú)
-- **Duty cycle korlát (868 MHz):** Európában max. 1% duty cycle → 1 üzenet/perc nagy adatcsomaggal
-- **Valós idejű vezérlés nehéz:** parancskiadás (cmnd/) LoRa-n lassú és korlátozott
-- A SmartBlue MQTT protokoll (Tasmota) nem illeszkedik natívan LoRaWAN-ra → átalakítás szükséges
+| Korlát | Következmény | SmartBlue |
+|--------|--------------|-----------|
+| **Alacsony sávszélesség** | Csak apró csomagok: `MAC, Temp: 24.5, PWM: 0.8` | Elég szenzoradathoz |
+| **Nincs FOTA LoRa-n** | ESPHome `.bin` frissítés **nem** megy át LoRa-n | Node OTA: **Wi-Fi közelben** vagy gateway-n keresztül kábelesen |
+| **Duty cycle (868 MHz)** | Max. ~**1%** adásidő – óránként ~36 mp | Küldés **1–5 percenként**, nem másodpercenként |
+| **Késleltetett parancsok** | TB csúszka / Shared Attribute **nem azonnali** | Node felébred → küld → gateway visszaküldhet beállítást – **percek** |
+| **LoRaWAN vs Packet Transport** | LoRaWAN: extra network server | ESPHome Packet Transport: **egyszerűbb** TB integráció |
+
+- Valós idejű vezérlés (PWM csúszka azonnal): **Wi-Fi vagy GSM** jobb; LoRa-ra ritkított paraméterezés
+- Korábbi Tasmota `cmnd/stat/tele` LoRaWAN-ra nem natív – ESPHome Packet Transport + MQTT gateway megoldja
 
 ### Összefoglalás – mikor érdemes vizsgálni a LoRa-t
 
@@ -157,14 +335,16 @@ A SmartBlue projekt **jelenlegi fázisában (beltéri, WiFi garantált)** a LoRa
 - Terepi telepítések jönnek, ahol nincs GSM lefedettség
 - Nagy területen (gyár, farm) sok eszközt kell lefedni alacsony költséggel
 - Akkumulátoros eszközökhöz ultra-alacsony fogyasztás kell
-- Saját privát LoRa gateway hálózat gazdaságos megoldás (pl. 1 gateway → 50+ eszköz)
+- Saját privát LoRa gateway (1 gateway → sok node) – **ESPHome Packet Transport** vagy LoRaWAN
+- Wi-Fi van a főépületben, de a szenzor **200+ m-re** – LoRa node + gateway
 
 ### Nyitott kérdések LoRa kapcsán
 
 - [ ] Van-e a pilot helyszíneken olyan terület, ahol WiFi / GSM nem megbízható?
 - [ ] Robi / Alfréd riasztós / kamerás munkáinál előfordul-e ilyen helyszín?
-- [ ] Érdemes-e a Heltec WiFi+LoRa boardot kipróbálni mint univerzális hardware platform?
-- [ ] ChirpStack saját szerverre kellene-e, vagy TTN elegendő?
+- [ ] **ESPHome Packet Transport pilot** – Heltec gateway + egy távoli node
+- [ ] Packet Transport vs LoRaWAN – melyik út a hosszú távú standard?
+- [ ] ChirpStack / TTN – csak ha LoRaWAN irány
 
 ---
 

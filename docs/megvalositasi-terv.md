@@ -1,6 +1,8 @@
 # Megvalósítási terv
 
-> **Döntés:** 2026-06-21 – kétfázisú megközelítés; **jelenleg az 1. fázisra koncentrálunk.**
+> **Döntés:** 2026-06-21 – kétfázisú megközelítés; **jelenleg az 1. fázisra koncentrálunk.**  
+> **Szerver irány (2026-06-23):** ThingsBoard valószínű – adatdúsítás, meteo, statisztika a **Rule Engine**-ben → [`thingsboard-dontes.md`](thingsboard-dontes.md#adatfeldolgozás--rule-engine-dúsítás-statisztika-külső-adatok)  
+> **Konkrét lépések:** [`thingsboard-megvalositas.md`](thingsboard-megvalositas.md) – Docker, ESPHome sablon, szerelői folyamat, dashboard
 
 ---
 
@@ -69,12 +71,14 @@ Külső API-kból periodikusan letöltött, helyhez/időhöz kötött adatok.
 
 | Példa | Forrás | Gyakoriság |
 |-------|--------|------------|
-| Meteorológia | Nyilvános meteo API (csapadék, hő, pára, előrejelzés) | Óránként / napi |
+| Meteorológia | Nyilvános meteo API (csapadék, hő, pára, előrejelzés) | Óránként / eseményvezérelt |
 | Naptár / ünnepnap | Opcionális – kontextus a szokásprofilhoz | Napi |
 
-**Tárolás:** InfluxDB (idősor) – `source=external`, `provider=openmeteo` (vagy hasonló tag).
+**ThingsBoard irány:** Rule Engine **REST API Call** blokk – meteo lekérés telemetria beérkezésekor vagy ütemezve; eredmény ugyanabba az idősor-rekordba mentve. Koordináták az Asset attribútumban.
 
-**Megjegyzés:** API választás és Szerbia lefedettség nyitott – lásd [`dontes-elokeszito.md`](dontes-elokeszito.md).
+**Korábbi terv (FastAPI stack):** InfluxDB – `source=external`, `provider=openmeteo` tag.
+
+**Megjegyzés:** API választás és Szerbia lefedettség nyitott – lásd [`dontes-elokeszito.md`](dontes-elokeszito.md), [`thingsboard-dontes.md`](thingsboard-dontes.md).
 
 ### ④ Származtatott / statisztikai adatok (ML később)
 
@@ -82,14 +86,15 @@ A már rendelkezésre álló adatokból képzett új értékek – **1. fázisba
 
 | Szint | Példa | 1. fázis | Később (ML) |
 |-------|-------|----------|-------------|
-| Aggregáció | Órás / napi átlag hőmérséklet | ✓ | – |
-| Trend | 7 napos mozgó átlag | ✓ | – |
+| Aggregáció | Órás / napi átlag hőmérséklet | ✓ Rule Engine Analytics | – |
+| Trend | 7 napos mozgó átlag, emelkedő/csökkenő | ✓ Rule Engine Script | – |
+| Összehasonlítás | Belső vs. külső hő különbség | ✓ Rule Engine Script | – |
 | Anomália | – | – | Szokásprofil eltérés |
 | Előrejelzés | – | – | Öntözési javaslat, riasztás |
 
-**Tárolás:** külön InfluxDB measurement (`derived`) vagy materialized view / batch job eredménye.
+**ThingsBoard irány:** számított mezők telemetriaként mentve → dashboard widgetek közvetlenül használják.
 
-**ML:** Python ökoszisztéma (FastAPI backend) – scikit-learn, pandas stb.; részletes modell később, amikor van elég minta adat.
+**Korábbi terv:** külön InfluxDB measurement (`derived`) vagy batch job; ML Python-ban (FastAPI).
 
 ---
 

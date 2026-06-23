@@ -56,8 +56,10 @@ Az első pilot projektek **Szerbiában** kerülnek telepítésre.
 Az eszközcsalád tagjai eltérő mérési/vezérlési feladatot látnak el, de a kommunikációs rész közös — ez lehetővé teszi az egységes szerver-oldali kezelést és a közös firmware-alapot.
 
 ### Firmware
-- **Tasmota** – nyílt forráskódú ESP32/ESP8266 firmware
-- MQTT kommunikáció Tasmota konvenció szerint: `cmnd/`, `stat/`, `tele/` prefix struktúra
+- **Tasmota** – pilot/teszt fázisban (sikeres MQTT teszt 2026-05-27)
+- **ESPHome** – valószínű végleges irány flotta-skálázáshoz (döntés előkészítés 2026-06-23)
+- MQTT kommunikáció: jelenleg Tasmota konvenció (`cmnd/`, `stat/`, `tele/`); ESPHome esetén saját topic séma
+- → Részletes döntési folyamat: [`firmware-esphome-dontes.md`](firmware-esphome-dontes.md)
 
 ### Kommunikációs módok
 
@@ -77,13 +79,13 @@ A szerver a következő fő feladatokat látja el:
 
 1. **Adatgyűjtés** – eszközök adatainak fogadása és tárolása
 2. **Adatfeldolgozás** – nyers adatok értelmezése, aggregálása, elemzése
-3. **Konfiguráció kezelés** – eszközök konfigurációjának előállítása
-4. **OTA konfig letöltés** – konfiguráció automatikus kijuttatása az eszközökre
+3. **Konfiguráció kezelés** – eszközök paraméterezése (Shared Attributes / RPC)
+4. **OTA / FOTA** – firmware és konfiguráció távoli kijuttatása
 5. **Hibafigyelés** – meghibásodott vagy nem elérhető eszközök detektálása
-6. **Értesítések** – felhasználók értesítése:
-   - Email
-   - SMS
-   - Push üzenet (mobilalkalmazás vagy web push)
+6. **Értesítések** – felhasználók értesítése (email, SMS, push)
+7. **Dashboard** – multi-tenant felhasználói felület
+
+**Valószínű platform:** [ThingsBoard](thingsboard-dontes.md) (felülvizsgálat alatt; korábbi terv: EMQX + FastAPI – [`szerver-architektura.md`](szerver-architektura.md))
 
 → Részletes lehetőségek: [`szerver-architektura.md`](szerver-architektura.md)
 
@@ -107,7 +109,7 @@ A szerver a következő fő feladatokat látja el:
 
 > **Nem nagyon általános, hanem sok különböző – de azonos alapokon.**
 
-Az eszközcsalád tagjai specifikus feladatokra optimalizált eszközök, nem univerzális platformok. Az egységes kommunikációs és firmware alap (ESP32 + Tasmota + MQTT) teszi lehetővé a könnyű bővítést és a közös szerver-oldali kezelést.
+Az eszközcsalád tagjai specifikus feladatokra optimalizált eszközök, nem univerzális platformok. Az egységes kommunikációs alap (ESP32 + MQTT) teszi lehetővé a könnyű bővítést; a firmware (Tasmota vagy ESPHome) döntés alatt áll.
 
 ---
 
@@ -138,4 +140,7 @@ Az eszközcsalád tagjai specifikus feladatokra optimalizált eszközök, nem un
 | `hw-kijelzok.md` | Kijelző opciók – SSD1306, TFT, e-paper (Tasmota kompatibilitás) |
 | `hw-gyartok-tasmota.md` | Tasmota-kompatibilis gyártók (Athom, Nous, Shelly, Sonoff stb.) |
 | `dontes-elokeszito.md` | Összefoglaló döntési mátrix |
+| `firmware-esphome-dontes.md` | ESPHome vs Tasmota döntés, flotta-architektúra, provisioning |
+| `thingsboard-dontes.md` | ThingsBoard szerver döntés, ESPHome integráció, FOTA, PWM példa |
+| `thingsboard-megvalositas.md` | Lépésről lépésre: Docker CE, ESPHome sablon, provisioning, dashboard |
 | `megvalositasi-terv.md` | Kétfázisú megvalósítási terv (1. fázis: adatgyűjtés + dashboard) |

@@ -69,6 +69,8 @@ Tasmota-xxxx
 3. Add meg a saját WiFi hálózat SSID-jét és jelszavát
 4. Az eszköz csatlakozik, kap egy IP-t a routertől
 
+> ⚠️ **Router:** Az ESP8266/ESP32 csak **2,4 GHz**-et támogat. Kerüljük azt, ha egy SSID alatt a 2,4 és 5 GHz is elérhető (band steering). Dedikált IoT SSID ajánlott – részletes beállítások: [`kommunikacio.md`](kommunikacio.md) – Router beállítás fejezet.
+
 **IP megtalálása:** router DHCP lista, hálózatszkenner, vagy `http://tasmota-xxxx.local`
 
 ---

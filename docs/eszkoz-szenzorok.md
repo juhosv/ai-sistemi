@@ -56,7 +56,7 @@ A legolcsóbb „talajnedvesség" modulok (kapacitív v1/v2 sonda) **csak a nedv
 | **RS485 3-in-1 talaj szonda** | Nedvesség, talaj hőmérséklet, EC (vezetőképesség) | RS485 Modbus | ⚠ Egyedi / Modbus bridge | Ipari / mezőgazdasági standard; tartós, kalibrálható |
 | **RS485 5-in-1** | Nedvesség, hőmérséklet, EC, pH, NPK | RS485 Modbus | ⚠ Egyedi | Olcsó 5-in-1 modulok pontossága gyakran kérdéses – ellenőrizendő |
 | Kapacitív + DS18B20 | Nedvesség + talaj hőmérséklet (külön szonda) | Analóg + 1-Wire | ✓ Részben | Olcsó kompromisszum, de EC/pH nincs |
-| pH sonda (külön) | pH | Analóg / I2C | ⚠ | Nedvesség+EC mellett kiegészítő lehet |
+| pH sonda (külön) | pH | Analóg / I2C / RS485 | ⚠ | Nedvesség+EC mellett kiegészítő – lásd [`beszerzes.md`](beszerzes.md) |
 
 **Ajánlott irány:** RS485 **3-in-1** (nedvesség + hőmérséklet + EC) – ez adja a legtöbb értelmes adatot AI elemzéshez és mezőgazdasági döntésekhez anélkül, hogy csak egy paramétert mérnénk.
 
@@ -160,3 +160,4 @@ A legolcsóbb „talajnedvesség" modulok (kapacitív v1/v2 sonda) **csak a nedv
 - [ ] **Talaj szenzor:** Hestore **SOIL-H-T-EC-RS485** (prod_10048070) + **MAX485-M** – Modbus Tasmota integráció hogyan?
 - [ ] **Jelenlét érzékelő:** Hestore **LD2410C** (prod_10046482) – GPIO vs UART bekötés Tasmotával?
 - [ ] RS485–TTL konverter (MAX485) szükséges a talaj szondához?
+- [ ] **pH:** elég a 3-in-1 EC nélkül, vagy kell JXBS-3001-NPK-RS (pH+NPK)? Vagy folyadék pH (EQV-PH-BRD + E-201) kísérlet?

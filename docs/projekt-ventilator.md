@@ -1,8 +1,19 @@
 # Projekt: Hőmérsékletfüggő ventilátor-szabályozó
 
 > **Státusz:** Ötlet / tervezés fázis  
-> **Platform:** ESP32 + Tasmota (vagy ESPHome)  
-> **Szerver:** Opcionális – az alapfunkció önállóan is működik
+> **Platform:** ESP32 + ESPHome (valószínű) + ThingsBoard  
+> **Szerver:** ThingsBoard dashboard – user állíthatja a PWM határértékeket csúszkával  
+> **Részletes minta:** [`thingsboard-dontes.md`](thingsboard-dontes.md#példa-hőmérséklet--pwm-szabályozás-felhasználói-csúszkákkal)  
+> **Megvalósítási lépések:** [`thingsboard-megvalositas.md`](thingsboard-megvalositas.md)
+
+---
+
+## Két vezérlési út
+
+| Típus | Hardver | ESPHome komponens | Mikor |
+|-------|---------|-------------------|-------|
+| **DC ventilátor** | MOSFET + 12/24 V | `ledc` PWM | PC venti, alacsony feszültség |
+| **AC ventilátor** | Triak + nullátmenet + optocsatoló | **`ac_dimmer`** | Hálózati (230 V) fázishasításos vezérlés |
 
 ---
 
@@ -36,6 +47,30 @@ DS18B20 / BME280
 
 ## Hardver kapcsolás
 
+### AC ventilátor – Triak + nullátmenet (230 V) – ESPHome `ac_dimmer`
+
+Hálózati ventilátoroknál **nem** elég szoftveres PWM: kell **nullátmenet-érzékelés** (zero-cross) és **fázishasításos** triak gyújtás. Az ESPHome **`ac_dimmer`** komponense ezt **natívan** kezeli – C++ interrupt kód nélkül.
+
+```
+230 V AC ──── Triak ──── Ventilátor (AC)
+                ▲
+         gate_pin (GPIO23) ← optocsatoló (pl. MOC3021)
+                │
+         ESP32 ac_dimmer
+                │
+    zero_cross_pin (GPIO25) ← nullátmenet-érzékelő áramkör
+```
+
+| Láb | Szerep |
+|-----|--------|
+| `zero_cross_pin` | Hálózat nullátmenetének figyelése – 50 Hz → ~10 ms félperiódus |
+| `gate_pin` | Triak gyújtóimpulzus, késleltetéssel (fázishasítás) |
+| `method: leading pulse` | Triakhoz kötelező – rövid gyújtótüske |
+
+**Működés (háttérben):** az ESPHome automatikusan számolja a hálózati frekvenciát, mikroszekundumos pontossággal adja a gyújtóimpulzust – hasonlóan a RobotDyn AC Dimmer modulokhoz.
+
+**Processzor:** **ESP32 javasolt** (nem ESP8266) – kétmagos; a nullátmenet időzítés stabilabb MQTT/Wi-Fi forgalom mellett is (ESP8266-nál mikroszekundumos késés → fordulatszám-ingadozás).
+
 ### 2 vezetékes DC ventilátor (N-MOSFET low-side)
 
 ```
@@ -59,7 +94,135 @@ Pl.: IRLZ44N, IRL520N, AO3400
 
 ---
 
-## Tasmota konfiguráció
+## ESPHome – komplex helyi logika (AC Triak)
+
+A hőmérséklet → teljesítmény szabályozás **100%-ban lokálisan** fut (offline is). A ThingsBoard a **határértékeket** és a **fordulatszám-tartományt** állítja; a triak/PWM időzítés a chipen marad.
+
+### Szabályozási paraméterek
+
+| ESPHome `number` | Alapérték | Tartomány | Jelentés |
+|------------------|-----------|-----------|----------|
+| `also_hatar` | (telepítéskor) | 10–40 °C | Alsó hőmérséklet – e felett indul a szabályozás |
+| `felso_hatar` | (telepítéskor) | 20–60 °C | Felső hőmérséklet – e felett max. fordulat |
+| `min_fordulat` | **20 %** | 0–100 % | Minimális fordulatszám / teljesítmény (szabályozás közben) |
+| `max_fordulat` | **100 %** | 0–100 % | Maximális fordulatszám / teljesítmény |
+
+**Számítási logika:**
+
+1. `t ≤ also_hatar` → kimenet **0 %** (ventilátor ki)
+2. `also_hatar < t < felso_hatar` → lineáris: **min_fordulat** … **max_fordulat** között
+3. `t ≥ felso_hatar` → kimenet **max_fordulat**
+
+```
+Teljesítmény %
+max_fordulat ─────────────────●────────  (100% default)
+              ╱
+min_fordulat ●                          (20% default)
+            ╱
+    0 % ───●──────────────────────────
+         also_hatar    felso_hatar     → Hőmérséklet °C
+```
+
+### YAML – `ac_dimmer` + lambda (hőmérséklet alapú)
+
+```yaml
+output:
+  - platform: ac_dimmer
+    id: triak_kimenet
+    gate_pin: GPIO23
+    zero_cross_pin: GPIO25
+    method: leading pulse
+
+sensor:
+  - platform: dht
+    pin: GPIO22
+    model: DHT22
+    temperature:
+      name: "Belso Homerseklet"
+      id: belso_temp
+      on_value:
+        then:
+          - output.set_level:
+              id: triak_kimenet
+              level: !lambda |-
+                float temp = x;
+                float t_min = id(also_hatar).state;
+                float t_max = id(felso_hatar).state;
+                if (t_max <= t_min) return 0.0;
+
+                float norm = (temp - t_min) / (t_max - t_min);
+                if (norm <= 0.0) return 0.0;
+                if (norm >= 1.0) return id(max_fordulat).state / 100.0;
+
+                float min_pct = id(min_fordulat).state / 100.0;
+                float max_pct = id(max_fordulat).state / 100.0;
+                if (max_pct < min_pct) max_pct = min_pct;
+
+                return min_pct + norm * (max_pct - min_pct);
+
+number:
+  - platform: template
+    name: "also_hatar"
+    id: also_hatar
+    min_value: 10
+    max_value: 40
+    step: 1
+    optimistic: true
+    restore_value: true
+
+  - platform: template
+    name: "felso_hatar"
+    id: felso_hatar
+    min_value: 20
+    max_value: 60
+    step: 1
+    optimistic: true
+    restore_value: true
+
+  - platform: template
+    name: "min_fordulat"
+    id: min_fordulat
+    min_value: 0
+    max_value: 100
+    step: 1
+    unit_of_measurement: "%"
+    optimistic: true
+    restore_value: true
+    initial_value: "20"
+
+  - platform: template
+    name: "max_fordulat"
+    id: max_fordulat
+    min_value: 0
+    max_value: 100
+    step: 1
+    unit_of_measurement: "%"
+    optimistic: true
+    restore_value: true
+    initial_value: "100"
+```
+
+### DC ventilátor esetén
+
+Ugyanaz a lambda és a négy `number` paraméter; `output: platform: ledc` az `ac_dimmer` helyett (lásd [`thingsboard-megvalositas.md`](thingsboard-megvalositas.md)).
+
+> **AC ventilátor:** a korábbi fix 15% minimum helyett a **`min_fordulat`** (default 20%) állítható – búgás / túl alacsony feszültség elkerülésére.
+
+### ThingsBoard és szerelő – változatlan folyamat
+
+| Réteg | Változik? |
+|-------|-----------|
+| Szerelő: Captive Portal Wi-Fi | Nem |
+| TB: `also_hatar` / `felso_hatar` csúszkák | Nem |
+| TB: **`min_fordulat` / `max_fordulat`** csúszkák | Új widgetek |
+| TB: `Belso Homerseklet` telemetria | Nem |
+| Triak / PWM időzítés | **Csak ESPHome-ban** |
+
+→ [`firmware-esphome-dontes.md`](firmware-esphome-dontes.md) – egyedi logika lambdákkal, interrupt nélkül
+
+---
+
+## Tasmota konfiguráció (legacy / referencia)
 
 ### GPIO lábak
 
@@ -97,17 +260,15 @@ Finomabb szabályozás vagy PID-szerű vezérlés esetén → **ESPHome** javaso
 
 ## Önálló működés (szerver nélkül)
 
-Az ESP32 + Tasmota Rules **Home Assistant / MQTT broker nélkül** is tud önállóan szabályozni:
-- Webes felületen (helyi IP-n) állítható a logika
-- WiFi-n keresztül elérhető, de internet nem szükséges
+Az ESP32 + ESPHome lambda / `ac_dimmer` **ThingsBoard nélkül** is szabályoz – `restore_value: true` miatt a határértékek áramszünet után is megmaradnak.
 
 | Funkció | Szerver nélkül |
 |---------|----------------|
-| Automatikus ventilátorszabályozás | ✓ Igen |
-| Helyi webes beállítás | ✓ Igen |
+| Automatikus ventilátorszabályozás (DC PWM vagy AC triak) | ✓ Igen |
+| Nullátmenet / fázishasítás | ✓ `ac_dimmer` |
 | Hosszú távú naplózás / grafikon | ✗ Nincs |
-| Mobilos dashboard | ✗ Korlátozott |
-| MQTT integráció a SmartBlue szerverrel | ✓ Opcionálisan hozzáadható |
+| ThingsBoard dashboard + csúszkák | ✗ Korlátozott |
+| MQTT → ThingsBoard | ✓ Opcionálisan |
 
 ---
 
@@ -126,10 +287,12 @@ Az ESP32 + Tasmota Rules **Home Assistant / MQTT broker nélkül** is tud önál
 | Szempont | Tasmota | ESPHome |
 |---------|---------|---------|
 | Egyszerű lépcsős szabályozás | ✓ Jó | ✓ Jó |
-| Finom / lineáris / PID vezérlés | Nehézkes | ✓ Natív PID controller |
-| Konfigurálás módja | Webfelület / MQTT | YAML fordítás |
-| Szerver nélküli működés | ✓ | ✓ |
-| SmartBlue MQTT integrálhatóság | ✓ Natív | ✓ |
+| Finom / lineáris vezérlés | Nehézkes | ✓ Lambda |
+| **AC triak + nullátmenet** | Korlátozott | ✓ **`ac_dimmer` natív** |
+| PID vezérlés | Nehézkes | ✓ Beépített PID |
+| Konfigurálás | Webfelület / MQTT | YAML + OTA |
+| ThingsBoard integráció | MQTT | MQTT |
+| Offline helyi logika | Rules | Lambda + `restore_value` |
 
 ---
 
@@ -161,26 +324,31 @@ Sensor: OK
 - Üzemállapot (fut / leállt / hiba)
 - Riasztás: ha a hőmérséklet küszöb felett van, de a ventilátor nem fut
 
-### Mit lehet távolról beállítani
-A hőmérséklet–fordulatszám görbe paraméterei Tasmota `Mem` változókon keresztül tárolhatók és MQTT `cmnd` üzenetekkel frissíthetők:
+### Mit lehet távolról beállítani (ThingsBoard)
+
+A hőmérséklet–teljesítmény görbe **határértékei** Shared Attribute / RPC-n keresztül:
+
+| TB mező | ESPHome `number` | Alapérték | Hatás |
+|---------|------------------|-----------|-------|
+| `also_hatar` | Alsó hőmérséklet | – | Szabályozás indulási pontja (°C) |
+| `felso_hatar` | Felső hőmérséklet | – | Max. fordulat hőmérsékleti pontja (°C) |
+| `min_fordulat` | Min. fordulatszám | **20 %** | Legalacsonyabb teljesítmény szabályozás közben |
+| `max_fordulat` | Max. fordulatszám | **100 %** | Legmagasabb teljesítmény |
+
+A **fázishasításos / PWM időzítés** nem a szerveren fut – csak a fenti négy paraméter változik távolról.
+
+→ Korábbi Tasmota `Mem` + Rules megközelítés: legacy referencia alább.
+
+<details>
+<summary>Tasmota Mem változók (legacy)</summary>
 
 ```
-cmnd/{topic}/Mem1  →  alsó küszöb (°C), pl. "30"
-cmnd/{topic}/Mem2  →  felső küszöb (°C), pl. "45"
-cmnd/{topic}/Mem3  →  minimális PWM %, pl. "20"
+cmnd/{topic}/Mem1  →  alsó küszöb (°C)
+cmnd/{topic}/Mem2  →  felső küszöb (°C)
+cmnd/{topic}/Mem3  →  minimális PWM %
 ```
 
-A Tasmota Rule ekkor ezeket olvassa:
-
-```
-Rule1
-  ON DS18B20#Temperature<%Mem1% DO PWM1 0 ENDON
-  ON DS18B20#Temperature>=%Mem1% DO PWM1 %Mem3% ENDON
-  ON DS18B20#Temperature>=%Mem2% DO PWM1 1023 ENDON
-Rule1 1
-```
-
-→ Így a helyszínre való utazás nélkül, távolról hangolható a szabályozás.
+</details>
 
 ---
 
@@ -202,9 +370,11 @@ DS18B20 → WT32-ETH01 → Ethernet kábel → helyi hálózat → SmartBlue sze
 
 ## Nyitott kérdések
 
-- [ ] 2 vagy 4 vezetékes ventilátor?
-- [ ] Lépcsős Tasmota Rules elegendő, vagy PID (ESPHome)?
-- [ ] Milyen alkalmazásba kerül? (szerverrack, ipari szekrény, 3D nyomtató, egyéb?)
-- [ ] Szükséges-e SmartBlue szerver integráció (naplózás, riasztás)?
+- [ ] **DC (MOSFET/PWM) vagy AC (triak + `ac_dimmer`)?**
+- [ ] 2 vagy 4 vezetékes DC ventilátor?
+- [ ] Lépcsős logika elegendő, vagy lineáris lambda / PID?
+- [ ] Milyen alkalmazás? (szerverrack, ipari szekrény, 3D nyomtató, hálózati venti)
+- [ ] AC minimum teljesítmény – **`min_fordulat`** default 20%, hangolható TB-ről
 - [ ] Kell-e helyi OLED kijelző?
-- [ ] WiFi elegendő, vagy Ethernet kell a stabilitáshoz?
+- [ ] WiFi elegendő, vagy Ethernet (WT32-ETH01)?
+- [ ] **230 V biztonság:** szerelői minősítés, tokozás, galvanikus elválasztás (MOC3021)

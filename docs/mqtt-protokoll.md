@@ -1,6 +1,7 @@
 # MQTT Protokoll – Topic struktúra
 
-> Az eszközök **Tasmota firmware** MQTT konvencióját követik.
+> Az eszközök jelenleg **Tasmota firmware** MQTT konvencióját követik.  
+> ESPHome irány esetén más topic struktúra szükséges → lásd [`firmware-esphome-dontes.md`](firmware-esphome-dontes.md).
 
 ---
 
