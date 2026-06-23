@@ -124,10 +124,21 @@ esp32:
   # ESP8266 esetén: esp8266: board: d1_mini
 
 # --- Helyszíni Wi-Fi (szerelő) ---
+# Egy hálózat: csak ap + captive_portal (első telepítés)
+# Flotta / tartalék: networks lista + priority – lásd kommunikacio.md
 wifi:
   ap:
     ssid: "OkosEszkoz_Telepites"
-    password: !secret ap_password   # opcionális, de ajánlott
+    password: !secret ap_password
+
+  # Opcionális – pre-staging vagy elsődleges/másodlagos:
+  # networks:
+  #   - ssid: "Elsodleges_IoT_WiFi"
+  #     password: !secret wifi_primary
+  #     priority: 100
+  #   - ssid: "Tartalek_Extender"
+  #     password: !secret wifi_backup
+  #     priority: 50
 
 captive_portal:
 

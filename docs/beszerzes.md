@@ -2,6 +2,48 @@
 
 ---
 
+## Hestore – 2026-06-23
+
+Forrás: `hestore_20260623.xml`
+
+### Szenzorok
+
+| Cikkszám | Leírás | db | Státusz |
+|----------|--------|----|---------|
+| 100.480.70 | **SOIL-H-T-EC-RS485** – talajnedvesség, hőmérséklet, EC, rozsdamentes acél szonda, IP68, RS485 Modbus | 1 | ✓ Megvásárolva |
+| 100.464.82 | **LD2410C** – emberi jelenlét radar, 24 GHz FMCW, GPIO + UART + BT, 5…12 V, 0,75…6 m, 60° | 4 | ✓ Megvásárolva |
+
+### Tápegység / feszültség
+
+| Cikkszám | Leírás | db | Megjegyzés |
+|----------|--------|----|------------|
+| 100.492.77 | **MINI560-PRO-5V** – DC-DC buck, 7…32 V → fix 5 V | 1 | Terepi táp (pl. 12/24 V rendszerből 5 V szenzoroknak) |
+| 100.463.33 | **HW-228** – feszültség stabilizátor, 6…12 V → 5 V / 3,3 V | 1 | Egyszerű LDO/switcher modul prototípushoz |
+| 100.423.69 | **B1205S-1W** – izolált DC-DC, 12 V → 5 V, 1 W | 1 | Galvanikus leválasztás – zajos terepi táp / RS485 környezet |
+
+### Mérőteszt kiegészítők
+
+| Cikkszám | Leírás | db | Megjegyzés |
+|----------|--------|----|------------|
+| 100.426.76 | **P100-Q2** – mérő teszt tű Q2 fej, D=1,36 mm, aranyozott, rugós | 10 | NYÁK / tesztpad ellenőrzéshez |
+| 100.426.72 | **R100-4W** – mérő teszt tű hüvely, 4W, aranyozott | 10 | P100-Q2 párja – fixture / kézi mérés |
+
+### Megjegyzések (2026-06-23)
+
+- **SOIL-H-T-EC-RS485:** a 2026-06-21-es ajánlás megvalósult – még kell **MAX485-M** RS485–TTL az ESP32-hez (nem volt ebben a rendelésben)
+- **LD2410C × 4:** panic button / jelenlét pilot, otthoni teszt, mezőgazdasági helyszín – több párhuzamos prototípus
+- **Tápmodulok:** LD2410C 5 V (> 200 mA), talaj szonda 5…30 V – a buck/izolált modulok terepi tápellátáshoz
+- **Teszt tűk:** valószínűleg Zsolti NYÁK gyártás / beüzemelés kiegészítője
+
+### Még hiányzik ehhez a csomaghoz
+
+| Termék | db | Megjegyzés |
+|--------|----|------------|
+| MAX485-M (RS485–TTL) | 1+ | Talaj szonda ↔ ESP32 – [`prod_10035508`](https://www.hestore.hu/prod_10035508.html) |
+| USB-RS485 (opcionális) | 1 | PC-s Modbus teszt flashelés előtt |
+
+---
+
 ## Hestore – 2026-05-28
 
 Forrás: `hestore_20260528.xml`
@@ -73,11 +115,11 @@ Forrás: `hestore_20260528.xml`
 
 | Hestore | Termék | Mér | Ár (1+ db, nettó) | Raktár | Javaslat |
 |---------|--------|-----|------------------|--------|----------|
-| [prod_10048070](https://www.hestore.hu/prod_10048070.html) | **SOIL-H-T-EC-RS485** | Nedvesség, hőmérséklet, EC (+ só, TDS Modbus reg.) | **12 333 Ft** | > 5 | **Ajánlott – megvenni** |
+| [prod_10048070](https://www.hestore.hu/prod_10048070.html) | **SOIL-H-T-EC-RS485** | Nedvesség, hőmérséklet, EC (+ só, TDS Modbus reg.) | **12 333 Ft** | > 5 | **✓ Megvásárolva (2026-06-23)** |
 | [prod_10048071](https://www.hestore.hu/prod_10048071.html) | SOIL-H-RS485 | Csak nedvesség | 10 461 Ft | > 10 | ❌ Nem elég – csak 1 paraméter |
 | [prod_10046391](https://www.hestore.hu/prod_10046391.html) | JXBS-3001-NPK-RS | 7-in-1: NPK + pH + EC + hő + nedvesség | 37 463 Ft | > 5 | Drágább; NPK/pH pontossága kérdéses |
 
-**Ajánlott vásárlás:** `SOIL-H-T-EC-RS485` (cikkszám 100.480.70)
+**Vásárlás:** `SOIL-H-T-EC-RS485` (cikkszám 100.480.70) – **megvásárolva 2026-06-23**
 
 | Paraméter | Tartomány | Pontosság |
 |-----------|-----------|-----------|
@@ -150,7 +192,7 @@ Forrás: `hestore_20260528.xml`
 
 | Hestore | Termék | Ár (1+ db, nettó) | Raktár | Javaslat |
 |---------|--------|-------------------|--------|----------|
-| [prod_10046482](https://www.hestore.hu/prod_10046482.html) | **LD2410C** – emberi jelenlét radar (Hi-Link) | **1 806 Ft** | > 250 | **Megvenni** |
+| [prod_10046482](https://www.hestore.hu/prod_10046482.html) | **LD2410C** – emberi jelenlét radar (Hi-Link) | **1 806 Ft** | > 250 | **✓ Megvásárolva × 4 (2026-06-23)** |
 
 **LD2410C technikai adatok:**
 - 24 GHz FMCW mmWave radar – mozgó **és** álló ember érzékelése (mikromozgás)
@@ -166,16 +208,16 @@ Forrás: `hestore_20260528.xml`
 
 ---
 
-### Tervezett kosár összesítés (Hestore, 2026-06-21)
+### Tervezett kosár összesítés (Hestore, 2026-06-21) – részben teljesült
 
-| Termék | db | Egységár (nettó) | Összesen |
-|--------|----|------------------|----------|
-| SOIL-H-T-EC-RS485 | 1 | 12 333 Ft | 12 333 Ft |
-| MAX485-M | 1 | 365 Ft | 365 Ft |
-| LD2410C | 1 | 1 806 Ft | 1 806 Ft |
-| **Összesen** | | | **~14 504 Ft** |
+| Termék | db | Státusz |
+|--------|----|---------|
+| SOIL-H-T-EC-RS485 | 1 | ✓ Megvásárolva (2026-06-23) |
+| LD2410C | 4 | ✓ Megvásárolva (2026-06-23) – eredetileg 1 db tervezve |
+| MAX485-M | 1 | ⏳ Még nincs meg – következő rendelés |
+| USB-RS485 (opcionális) | 1 | ⏳ Még nincs meg |
 
-Opcionális: USB-RS485 (613 Ft) – szonda PC-s teszteléshez a firmware fejlesztés alatt.
+**2026-06-23 rendelésben továbbá:** MINI560-PRO-5V, HW-228, B1205S-1W tápmodulok; P100-Q2 + R100-4W teszt tűk (10+10 db).
 
 ### IoT router (ügyfélnek, előre konfigurálva)
 

@@ -1,11 +1,105 @@
 # MQTT Protokoll – Topic struktúra
 
-> Az eszközök jelenleg **Tasmota firmware** MQTT konvencióját követik.  
-> ESPHome irány esetén más topic struktúra szükséges → lásd [`firmware-esphome-dontes.md`](firmware-esphome-dontes.md).
+> **Két firmware ág:**
+> - **Tasmota (pilot):** `cmnd` / `stat` / `tele` – alább, legacy  
+> - **ESPHome + ThingsBoard CE (cél):** ThingsBoard MQTT API – [ESPHome + ThingsBoard szekció](#esphome--thingsboard-ce--mqtt-architektúra)
 
 ---
 
-## Alapstruktúra
+## ESPHome + ThingsBoard CE – MQTT architektúra
+
+**Igen – a kommunikáció 100%-ban MQTT-n folyik.** Sem a ThingsBoard, sem a broker nem tudja (és nem is kell tudnia), hogy az eszköz triakot vezet, LED-et villogtat vagy DC PWM-et ad. A szerver csak **egyszerű JSON telemetriát** fogad és **paramétereket** küld vissza.
+
+### Elvi felosztás
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  ESP32 / ESP8266 (ESPHome)                                   │
+│  ┌─────────────────────┐    ┌─────────────────────────────┐ │
+│  │ MQTT (egyszerű JSON) │    │ Helyi logika (láthatatlan)   │ │
+│  │ ↑ telemetria         │    │ ac_dimmer, nullátmenet,      │ │
+│  │ ↓ attribútumok       │    │ lambda, restore_value        │ │
+│  └──────────┬──────────┘    └─────────────────────────────┘ │
+└─────────────┼───────────────────────────────────────────────┘
+              │ MQTT (1883)
+              ▼
+     ThingsBoard CE (beépített broker)
+              │
+              ▼
+     Dashboard, Rule Engine, PostgreSQL
+```
+
+### Két irány – két topic típus
+
+| Irány | ThingsBoard MQTT | Ki küldi | Példa payload |
+|-------|------------------|----------|---------------|
+| **Felfelé** (telemetria) | `v1/devices/me/telemetry` | Eszköz → szerver | `{"Belso_Homerseklet": 26.5}` |
+| **Lefelé** (attribútumok) | `v1/devices/me/attributes` | Szerver → eszköz | `{"also_hatar": 22, "felso_hatar": 35}` |
+
+**Hitelesítés:** MQTT `username` = **device access token** (ThingsBoard Device menü).
+
+### Példa – ventilátor projekt (bővített)
+
+**Felfelé – mért és opcionális visszajelzés:**
+
+```json
+{
+  "Belso_Homerseklet": 26.5,
+  "Ventilator_Teljesitmeny": 0.45
+}
+```
+
+A `Ventilator_Teljesitmeny` (pl. 0.45 = 45%) **opcionális** – ESPHome-ból küldhető telemetriaként, hogy a dashboardon élőben látszik a számított teljesítmény. A nullátmeneti jelek **nem** mennek MQTT-n (másodpercenként 100× – összeomlana a hálózat).
+
+**Lefelé – csúszkák a ThingsBoard felületéről:**
+
+```json
+{
+  "also_hatar": 22,
+  "felso_hatar": 35,
+  "min_fordulat": 20,
+  "max_fordulat": 100
+}
+```
+
+→ Részletes paraméterek: [`projekt-ventilator.md`](projekt-ventilator.md)
+
+### Mi marad a chipen?
+
+| Szerver látja | Chipen belül (MQTT-n kívül) |
+|---------------|----------------------------|
+| Hőmérséklet érték | DHT/DS18B20 olvasás |
+| Határértékek, min/max % | `also_hatar`, `felso_hatar`, `min_fordulat`, `max_fordulat` (NVS) |
+| Opcionális: számított % | Lineáris görbe + **`ac_dimmer`** nullátmenet-időzítés |
+| – | Triak gyújtóimpulzus (µs pontosság) |
+
+A **fázishasítás, triak, PWM hardver** a ThingsBoard és az MQTT számára **láthatatlan**.
+
+### Offline biztonság
+
+| Esemény | Helyi szabályozás |
+|---------|-------------------|
+| MQTT megszakad | ✓ Folytatódik – utolsó határértékek NVS-ben (`restore_value: true`) |
+| Wi-Fi / router leáll | ✓ Folytatódik |
+| ThingsBoard szerver leáll | ✓ Folytatódik |
+
+A ventilátor szabályozása **nem függ** a másodpercenkénti MQTT kapcsolattól – csak a **paraméterfrissítés** és **távfelügyelet** igényel hálózatot.
+
+### ESPHome vs Tasmota topicok
+
+| | Tasmota | ESPHome + ThingsBoard |
+|---|---------|----------------------|
+| Topic minta | `tele/{device}/SENSOR` | `v1/devices/me/telemetry` |
+| Parancs / config | `cmnd/{device}/...` | Shared attributes JSON |
+| Broker | EMQX (külön) vagy TB beépített | **ThingsBoard CE :1883** |
+
+A pilotban az ESPHome → TB topic mapping még **ellenőrizendő** → [`thingsboard-megvalositas.md`](thingsboard-megvalositas.md#mqtt-integráció--pilot-előtt-ellenőrizendő-).
+
+---
+
+## Tasmota konvenció (pilot / legacy)
+
+> Az alábbi szekciók a **Tasmota** `cmnd` / `stat` / `tele` struktúráját írják le (D1 Mini pilot teszt).
 
 ```
 %prefix%/%topic%/<utasítás>

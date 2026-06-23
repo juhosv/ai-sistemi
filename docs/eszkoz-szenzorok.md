@@ -88,7 +88,7 @@ A legolcsóbb „talajnedvesség" modulok (kapacitív v1/v2 sonda) **csak a nedv
 
 | Szenzor | Technológia | Előny |
 |---------|-------------|-------|
-| **LD2410C** | mmWave radar (24 GHz) | Statikus embert is érzékel – **Hestore prod_10046482, ~1806 Ft** |
+| **LD2410C** | mmWave radar (24 GHz) | Statikus embert is érzékel – **megvásárolva × 4 (2026-06-23)** |
 | **RCWL-0516** | Mikrohullámú Doppler radar | Fal / üveg mögött is érzékel, olcsó – de **mozgás-alapú**, nem statikus jelenlét |
 
 > **LD2410 vs PIR:** A PIR csak mozgást érzékel. Az LD2410 légzés / szívverés szintű mikromozgást is – valaki ülve, olvasva is „jelenlét". **Beszerzési prioritás: LD2410 (jelenlét), nem PIR.**
@@ -119,7 +119,7 @@ A legolcsóbb „talajnedvesség" modulok (kapacitív v1/v2 sonda) **csak a nedv
 | Szenzor | Mér | Alkalmazás |
 |---------|-----|------------|
 | Kapacitív talajnedvesség | Talaj nedvességtartalom | Növényöntözés automatika – **csak nedvesség, nem elég** |
-| **RS485 3-in-1 talaj szonda** | Nedvesség + hőmérséklet + EC | Mezőgazdasági pilot, AI elemzés – **Hestore SOIL-H-T-EC-RS485** |
+| **RS485 3-in-1 talaj szonda** | Nedvesség + hőmérséklet + EC | Mezőgazdasági pilot, AI elemzés – **SOIL-H-T-EC-RS485, megvásárolva 2026-06-23** |
 | Zavarosságmérő (turbidity) | Vízminőség | Akvárium, vízszűrés, csapadék |
 | **VEML6075** | UV-A + UV-B + UV index | Napvédelem, üvegház, napelem monitoring |
 | pH szenzor | pH érték | Akvárium, talaj, vízkezelés |
@@ -157,7 +157,7 @@ A legolcsóbb „talajnedvesség" modulok (kapacitív v1/v2 sonda) **csak a nedv
 - [ ] Melyik szenzortípusok kerülnek bele az **első pilot**ba?
 - [ ] Szükséges-e CO₂ mérés a pilot helyszíneken?
 - [ ] LoRa érdekes lehet-e a GSM helyett egyes terepi helyszíneken?
-- [ ] **Talaj szenzor:** Hestore **SOIL-H-T-EC-RS485** (prod_10048070) + **MAX485-M** – Modbus Tasmota integráció hogyan?
-- [ ] **Jelenlét érzékelő:** Hestore **LD2410C** (prod_10046482) – GPIO vs UART bekötés Tasmotával?
-- [ ] RS485–TTL konverter (MAX485) szükséges a talaj szondához?
+- [ ] **Talaj szenzor:** SOIL-H-T-EC-RS485 megvan – **MAX485-M** beszerzés + Modbus (Tasmota/ESPHome) integráció
+- [ ] **Jelenlét érzékelő:** LD2410C × 4 megvan – GPIO vs UART bekötés, ESPHome pilot
+- [ ] RS485–TTL konverter (**MAX485-M**) – még nincs meg, szükséges a talaj szondához
 - [ ] **pH:** elég a 3-in-1 EC nélkül, vagy kell JXBS-3001-NPK-RS (pH+NPK)? Vagy folyadék pH (EQV-PH-BRD + E-201) kísérlet?

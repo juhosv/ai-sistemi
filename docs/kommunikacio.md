@@ -52,7 +52,7 @@ Ha ilyen routerrel találkozunk a helyszínen, **érdemes külön hálózatot** 
 
 1. Helyszíni WiFi szkennelés (Tasmota Manager `WifiScan`, vagy eszköz AP mód) – melyik SSID látszik, milyen jelerősséggel
 2. Ha csak egy kombinált SSID van → kérjük az ügyfelet / IT-t a fenti dedikált 2,4 GHz hálózat létrehozására
-3. Tasmota **SSID1** = dedikált IoT hálózat; **SSID2** = opcionális tartalék (pl. mobil hotspot)
+3. Tasmota **SSID1** = dedikált IoT hálózat; **SSID2** = opcionális tartalék (pl. mobil hotspot). ESPHome flottánál: [`wifi.networks` + `priority`](#esphome--több-wi-fi-hálózat-elsődleges--másodlagos)
 4. Dokumentálni: SSID név, jelszó, router típus, ki állította be
 
 → Tasmota Manager WiFi szkennelés: [`user-guide/README.md`](user-guide/README.md) – Config / WiFi fejezet
@@ -107,6 +107,84 @@ Ha ilyen routerrel találkozunk a helyszínen, **érdemes külön hálózatot** 
 - [ ] VLAN / elkülönítés szükséges-e az ügyfél IT-től?
 
 → Beszerzési jelöltek: [`beszerzes.md`](beszerzes.md)
+
+### ESPHome – több Wi-Fi hálózat (elsődleges / másodlagos)
+
+Az **ESPHome** teljes mértékben támogatja az elsődleges, másodlagos és további Wi-Fi hálózatokat – nem egyetlen SSID-hez vagyunk kötve. A Tasmota **SSID1 / SSID2** megfelelője ESPHome-ban a `wifi.networks` lista.
+
+→ ESPHome flotta kontextus: [`firmware-esphome-dontes.md`](firmware-esphome-dontes.md#beüzemelés-helyszínen)
+
+#### 1. Prioritás alapú (elsődleges / másodlagos)
+
+A `priority` mezővel sorrendezhető a hálózatok. Indításkor a **legmagasabb prioritású** hálózathoz csatlakozik; ha az elérhetetlen, **automatikusan** a következőre vált.
+
+```yaml
+wifi:
+  networks:
+    - ssid: "Elsodleges_Ceges_WiFi"
+      password: !secret wifi_primary
+      priority: 100
+
+    - ssid: "Masodlagos_Tartalek_WiFi"
+      password: !secret wifi_backup
+      priority: 50
+
+    - ssid: "Szerelo_Mobil_Hotspot"
+      password: !secret wifi_hotspot
+      priority: 10
+
+captive_portal:
+```
+
+| Prioritás | Tipikus szerep |
+|-----------|----------------|
+| 100 | Elsődleges – ügyfél / IoT dedikált Wi-Fi |
+| 50 | Másodlagos – tartalék router, extender SSID |
+| 10 | Végső tartalék – szerelő mobil hotspot |
+
+**SmartBlue pre-staging (műhely):** irodai Wi-Fi magas prioritással → helyszíni SSID alacsonyabbal; műhelyben teszt, helyszínen automatikus váltás.
+
+#### 2. Jelerősség alapú (RSSI)
+
+Ha **nincs** `priority` megadva, indításkor az ESPHome **szkennel**, és a **legjobb RSSI**-jű hálózathoz csatlakozik (pl. földszint vs. emeleti extender):
+
+```yaml
+wifi:
+  networks:
+    - ssid: "Haz_Foldszint_WiFi"
+      password: !secret wifi_pass
+    - ssid: "Haz_Emelet_Extender"
+      password: !secret wifi_pass
+
+captive_portal:
+```
+
+#### 3. Captive Portal biztonsági háló
+
+A több hálózat és a Captive Portal **együtt** működik:
+
+```
+Indítás → próbálja a networks listát (prioritás vagy RSSI szerint)
+       → ha mind sikertelen → Captive Portal AP
+       → szerelő új SSID + jelszó → mentés a listához
+```
+
+| Eset | Viselkedés |
+|------|------------|
+| Áramszünet – router lassabban indul | ESP újrapróbálja a listát, majd AP mód |
+| Megváltozott Wi-Fi jelszó | Csatlakozás sikertelen → Captive Portal |
+| Elsődleges router leáll | Automatikus váltás másodlagosra (ha elérhető) |
+
+Ez növeli a **rendelkezésre állást** – triakos ventilátor, szenzorok stabilabb üzemelése ügyfélnél.
+
+#### ESPHome vs Tasmota – Wi-Fi tartalék
+
+| | Tasmota | ESPHome |
+|---|---------|---------|
+| Elsődleges | SSID1 | `networks[0]` vagy legmagasabb `priority` |
+| Másodlagos | SSID2 | További `networks` elemek |
+| Harmadik+ | Korlátozott | ✓ Tetszőleges számú hálózat a listában |
+| Helyszíni új Wi-Fi | AP mód / WebUI | **Captive Portal** |
 
 ---
 

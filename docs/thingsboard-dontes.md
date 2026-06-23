@@ -21,7 +21,7 @@ A korábbi terv **EMQX + FastAPI + PostgreSQL + InfluxDB + saját dashboard** vo
 | Adatdúsítés, külső API, statisztika | FastAPI scheduler + batch job | **Rule Engine** (vizuális) |
 | Tendenciák, aggregációk | InfluxDB + derived job | **Analytics / Aggregate** beépített |
 
-**Előzetes javaslat:** ThingsBoard a központi IoT platform; ESPHome a firmware; a kettő **MQTT-n** kapcsolódik. A korábbi FastAPI/InfluxDB döntés **felülvizsgálat alatt** – részben kiváltható, részben kiegészíthető (pl. LLM réteg, speciális üzleti logika).
+**Előzetes javaslat:** ThingsBoard a központi IoT platform; ESPHome a firmware; a kettő **MQTT-n** kapcsolódik – a komplex helyi logika (triak, PWM) a chipen marad, a szerver csak JSON telemetriát és attribútumokat lát. → [`mqtt-protokoll.md`](mqtt-protokoll.md#esphome--thingsboard-ce--mqtt-architektúra)
 
 ---
 

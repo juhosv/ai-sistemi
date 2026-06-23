@@ -208,6 +208,10 @@ Ugyanaz a lambda és a négy `number` paraméter; `output: platform: ledc` az `a
 
 > **AC ventilátor:** a korábbi fix 15% minimum helyett a **`min_fordulat`** (default 20%) állítható – búgás / túl alacsony feszültség elkerülésére.
 
+### Mi marad MQTT-n kívül?
+
+A triak nullátmenet-időzítés, a lambda számítás és a `restore_value` logika **100% lokális** – lásd [`mqtt-protokoll.md`](mqtt-protokoll.md#esphome--thingsboard-ce--mqtt-architektúra).
+
 ### ThingsBoard és szerelő – változatlan folyamat
 
 | Réteg | Változik? |
@@ -216,6 +220,7 @@ Ugyanaz a lambda és a négy `number` paraméter; `output: platform: ledc` az `a
 | TB: `also_hatar` / `felso_hatar` csúszkák | Nem |
 | TB: **`min_fordulat` / `max_fordulat`** csúszkák | Új widgetek |
 | TB: `Belso Homerseklet` telemetria | Nem |
+| TB: opcionális `Ventilator_Teljesitmeny` | Új – élő % visszajelzés |
 | Triak / PWM időzítés | **Csak ESPHome-ban** |
 
 → [`firmware-esphome-dontes.md`](firmware-esphome-dontes.md) – egyedi logika lambdákkal, interrupt nélkül
@@ -319,8 +324,8 @@ Sensor: OK
 > Megbeszélés alapján (2026-06-07): a helyszíni újrakonfigurálás elkerülése kulcsfontosságú.
 
 ### Mit lehet távolról látni
-- Aktuális hőmérséklet (DS18B20 / BME280)
-- Aktuális ventilátor fordulatszám / PWM %
+- Aktuális hőmérséklet (DS18B20 / BME280 / DHT)
+- Aktuális ventilátor teljesítmény / PWM % (opcionális MQTT telemetria: `Ventilator_Teljesitmeny`)
 - Üzemállapot (fut / leállt / hiba)
 - Riasztás: ha a hőmérséklet küszöb felett van, de a ventilátor nem fut
 

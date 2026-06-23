@@ -21,6 +21,7 @@ A pilot fázisban eddig **Tasmota** volt a választott firmware (sikeres end-to-
 | Eszköztípus sablon (pl. `nyomógomb_2_leddel`) | Template repo | **Packages + Substitutions** |
 | GSM adat (MQTT mobilneten) | Korlátozott | **✗ gyári – lásd GSM szekció** |
 | LoRa hatótáv (Wi-Fi helyett) | – | **✓ Packet Transport + gateway** |
+| Arduino projekt kiváltása | C++ mindenhez | **~90–95%** – lásd [ESPHome vs Arduino](#esphome-vs-arduino--lefedettség-és-korlátok) |
 
 **Előzetes javaslat:** ESPHome a végleges flotta-architektúrához; a meglévő Tasmota teszt és dokumentáció továbbra is értékes referencia.
 
@@ -45,6 +46,66 @@ Az ESPHome nyílt forráskódú rendszer **egyedi firmware** generálására ESP
 Sok SONOFF (BASIC, S26, POW, TX) belsejében ESP8266/ESP32 van – átprogramozható ESPHome-ra (flashing). A gyári eWeLink felhő kiváltható lokális vezérléssel.
 
 > **Fontos:** A SONOFF SNZB-06P jelenlét-érzékelőben **Zigbee** chip van, nem ESP – közvetlenül nem ESPHome-olható. Alternatíva: saját ESPHome radaros szenzor (pl. LD2410).
+
+---
+
+## ESPHome vs Arduino – lefedettség és korlátok
+
+> **Kérdés:** Minden Arduino projekt megvalósítható ESP8266/ESP32 + ESPHome-mal, miközben szabadon megadható, mit küld a szervernek és mit állítunk távolról?
+
+**Rövid válasz:** nagyjából **90–95% igaz** – a legtöbb okosotthon / IoT / épületautomatizálási projektre teljesen érvényes. A „minden” szó mérnökileg nem pontos; vannak speciális kivételek.
+
+### SmartBlue / ThingsBoard szempontból – 100% igaz
+
+| Követelmény | ESPHome megoldás |
+|-------------|------------------|
+| Távoli paraméterek | `number`, `select`, `switch`, `text` → ThingsBoard Shared Attributes / RPC |
+| Adatküldés szerverre | `sensor`, `binary_sensor`, `text_sensor` → MQTT telemetria |
+| Komplex helyi logika | `on_value`, `automation`, `then`, `!lambda` (pl. triak, ventilátor) |
+| Egyedi pinout | YAML GPIO / busz definíció |
+| Offline működés | `restore_value: true`, helyi automatizmusok |
+
+### Hardvertámogatás (natív komponensek)
+
+| Kategória | Példák |
+|-----------|--------|
+| Szenzorok | 500+ típus – hő, pára, lux, jelenlét, mmWave, talaj, áram |
+| Kijelzők | OLED, TFT, E-paper, LCD |
+| Aktuátorok | Relé, PWM, **`ac_dimmer`** (triak), LED, léptetőmotor |
+| Buszok | I2C, SPI, 1-Wire (Dallas), UART |
+
+### Hol NEM igaz az „minden Arduino projekt” állítás
+
+| Eset | Miért nem elég a tiszta ESPHome | Alternatíva |
+|------|----------------------------------|-------------|
+| **Nagyon magas mintavételezés** | 40 kHz+ FFT, oszcilloszkóp – ms időzítésre optimalizált | Egyedi C++ / `custom_component` |
+| **Extrém deep sleep (évek gombelemmel)** | Wi-Fi + MQTT kézfogás másodpercek – gyors lemerülés | Egyedi C++, ESP-NOW, LoRa, nem ESPHome stack |
+| **Ritka ipari protokoll** | Nincs gyári komponens (pl. egyedi CAN, klíma busz) | Arduino library + `custom_component` |
+| **GSM adatforgalom** | Nincs GPRS/4G IP gateway | 4G router + ESPHome, vagy TinyGSM C++ → [`kommunikacio.md`](kommunikacio.md) |
+
+### Kiskapu: `custom_component`
+
+Ha a gyári ESPHome nem tud valamit, **saját C++ kód** beágyazható – az ESPHome továbbra is kezeli:
+
+- Wi-Fi, Captive Portal, OTA
+- MQTT → ThingsBoard
+- Flotta sablonok, Packages
+
+A bonyolult algoritmus C++-ban marad; a kommunikáció és üzembe helyezés ESPHome-on.
+
+### SmartBlue projektre – összegzés
+
+| Feladat | ESPHome elegendő? |
+|---------|-------------------|
+| Hőmérséklet / pára mérés | ✓ |
+| Ventilátor DC PWM vagy AC triak | ✓ |
+| Távoli határértékek, min/max fordulat | ✓ |
+| ThingsBoard dashboard + csúszkák | ✓ |
+| Flotta provisioning (Captive Portal) | ✓ |
+| Mezőgazdasági pilot (ritka küldés) | ✓ (hálózati táp) |
+| Éves gombelem, óránként 1 üzenet | ⚠️ inkább egyedi firmware |
+
+**Következtetés:** A SmartBlue eszközcsalád területén (fűtés/hűtés, ventilátor, szenzorok, ThingsBoard integráció) az ESPHome + ESP32 **teljes mértékben kiváltja** az Arduino IDE-s fejlesztést – és gyorsabb flotta-menedzsmentet ad, mint nulláról írt C++.
 
 ---
 
@@ -275,8 +336,23 @@ captive_portal:
 | Módszer | Mikor | Hogyan |
 |---------|-------|--------|
 | **Captive Portal** | Ügyfél saját Wi-Fi | Helyszíni telefonos beállítás |
-| **Pre-staging** | Műhelyben teszt | Több Wi-Fi prioritással; irodai hálózat → később helyszíni |
+| **Pre-staging** | Műhelyben teszt | Több Wi-Fi `priority`-val – részletek: [`kommunikacio.md`](kommunikacio.md#esphome--több-wi-fi-hálózat-elsődleges--másodlagos) |
 | **Egységes fleet Wi-Fi** | Saját infrastruktúra (panzió, bérlemény) | Minden házban azonos rejtett SSID (pl. `smart-fleet`) – plug-and-play |
+
+**Pre-staging YAML példa:**
+
+```yaml
+wifi:
+  networks:
+    - ssid: "Irodai_Telepito_WiFi"
+      password: !secret office_wifi
+      priority: 100
+    - ssid: "Helyszini_Ugyfel_WiFi"
+      password: !secret site_wifi
+      priority: 50
+
+captive_portal:
+```
 
 Alternatíva Captive Portal helyett: **Improv Wi-Fi** (Bluetooth-on keresztül, mobilapp).
 
